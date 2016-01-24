@@ -54,13 +54,34 @@ impl<'a> IterableTokenStream<Chars<'a>> for &'a str {
 pub type ParseErrorType =  ();
 pub type ParseResult<D, T> = (Result<D, ParseErrorType>, T);
 
-pub trait Parser {
+pub trait Parser: Sized {
     type ParsedDataType;
     type Tokens: TokenStream;
 
     // type ParseResult = Result<Self::ParsedDataType, ParseErrorType>;
     fn parse(&self, tokens: Self::Tokens) -> ParseResult<Self::ParsedDataType, Self::Tokens>;
         // (Result<Self::ParsedDataType, ParseErrorType>, Self::Tokens);
+
+
+    fn or<P>(self, parser: P) -> Or<Self,P>
+        where P: Parser<Tokens=Self::Tokens,
+                                ParsedDataType=Self::ParsedDataType>
+    {
+        Or {
+            first: self,
+            second: parser
+        }
+    }
+
+    fn and<P>(self, parser: P) -> And<Self, P>
+        where P: Parser<Tokens=Self::Tokens>
+    {
+        And {
+            first: self,
+            second: parser
+        }
+    }
+
 
     fn map<F>(self, f: F) -> MapedParser<F, Self> where Self: Sized {
         MapedParser {
@@ -69,6 +90,8 @@ pub trait Parser {
         }
     }
 }
+
+// impl<P: Parser> ParserExt for P {}
 
 
 // ================================ MapedParser ================================
@@ -95,7 +118,7 @@ where
 }
 
 // ================================ OR ================================
-struct Or<P1,P2>
+pub struct Or<P1,P2>
 where P1: Parser,
       P2: Parser,
 {
@@ -121,6 +144,44 @@ where P1: Parser<Tokens=T, ParsedDataType=R>,
         return self.second.parse(tokens);
     }
 }
+
+
+// ================================ Seq ================================
+pub struct And<P1,P2>
+where P1: Parser,
+      P2: Parser,
+{
+    first: P1,
+    second: P2
+}
+
+impl< T, P1, P2> Parser for And<P1, P2>
+where P1: Parser<Tokens=T>,
+      P2: Parser<Tokens=T>,
+      T: TokenStream + Clone
+{
+    type ParsedDataType = (P1::ParsedDataType, P2::ParsedDataType);
+    type Tokens = T;
+
+    fn parse(&self, tokens: Self::Tokens) -> ParseResult<Self::ParsedDataType, Self::Tokens> {
+
+
+        let (first_res, other) = self.first.parse(tokens.clone());
+        // try!(first_res, );
+
+        if !first_res.is_ok() {
+            return (Err(ParseErrorType::default()), tokens);
+        }
+
+        let (second_res, other2) = self.second.parse(other);
+        if !second_res.is_ok() {
+            return (Err(ParseErrorType::default()), tokens);
+        }
+        return (Ok((first_res.unwrap(), second_res.unwrap())), other2);
+    }
+}
+
+
 
 
 
@@ -180,31 +241,36 @@ fn main() {
 
 #[test]
 fn or_test() {
-
-
     #[derive(Debug, PartialEq)]
     enum NumOrString {
         Num(i32),
         Str(String),
+        Space
     }
 
-    let num_parser = CharsParser::new(|c:&char| c.is_numeric());
+    let num_parser = CharsParser::new(|c:&char| c.is_numeric())
+        .map(|s: String| NumOrString::Num(s.parse::<i32>().unwrap()));
 
-    let uppercase_parser = CharsParser::new(|c:&char| c.is_uppercase());
+    let uppercase_parser = CharsParser::new(|c:&char| c.is_uppercase())
+        .map(|s: String| NumOrString::Str(s));
 
-    let num_or_uppercase = Or {
-        first: num_parser.map(|s: String| NumOrString::Num(s.parse::<i32>().unwrap())),
-        second: uppercase_parser.map(|s: String| NumOrString::Str(s)),
-    };
+    let space_parser = CharsParser::new(|c:&char| c == &' ')
+        .map(|_: String| NumOrString::Space);
+
+    let num_or_uppercase = num_parser
+                            .or(space_parser)
+                            .or(uppercase_parser);
 
 
     let test_list = &[
-        ("633XA",(Ok(NumOrString::Num(633)),"XA")),
-        ("XA5",(Ok(NumOrString::Str("XA".to_string())),"5")),
-        ("633",(Ok(NumOrString::Num(633)),"")),
-        ("d5A",(Err(()),"d5A")),
-        ("6A33xa",(Ok(NumOrString::Num(6)),"A33xa")),
-        ("FOO", (Ok(NumOrString::Str("FOO".to_string())),"")),
+        ("633XA",     (Ok(NumOrString::Num(633)),                "XA")),
+        ("XA5",       (Ok(NumOrString::Str("XA".to_string())),   "5")),
+        ("633",       (Ok(NumOrString::Num(633)),                "")),
+        (" 633",      (Ok(NumOrString::Space),                   "633")),
+        ("   x ",     (Ok(NumOrString::Space),                   "x ")),
+        ("d5A",       (Err(()),                                  "d5A")),
+        ("6A33xa",    (Ok(NumOrString::Num(6)),                  "A33xa")),
+        ("FOO",       (Ok(NumOrString::Str("FOO".to_string())),  "")),
     ];
 
     for t in test_list {
@@ -215,6 +281,39 @@ fn or_test() {
 
 
 }
+
+
+#[test]
+fn and_test() {
+
+    let num_parser = CharsParser::new(|c:&char| c.is_numeric())
+        .map(|s: String| (s.parse::<i32>().unwrap()));
+    {
+        let uppercase_parser = CharsParser::new(|c:&char| c.is_uppercase())
+            .map(|s: String| (s));
+
+
+        let num_or_uppercase = num_parser.and(uppercase_parser);
+
+        let test_list = &[
+            ("633XA",     (Ok((633,"XA".to_string())), "")),
+            ("5",         (Err(()),                    "5")),
+            ("633X",      (Ok((633, "X".to_string())),   "")),
+            ("XA",        (Err(()),                      "XA")),
+            ("500FFbar",  (Ok((500,"FF".to_string())),   "bar")),
+            ("d5A",       (Err(()),                      "d5A")),
+        ];
+
+        for t in test_list {
+            let res = num_or_uppercase.parse(t.0);
+            println!("{} {:?}", t.0, res);
+            assert_eq!(res, t.1);
+        }
+    }
+
+}
+
+
 
 #[test]
 fn num_parser_test() -> () {
