@@ -57,41 +57,47 @@ pub type ParseResult<D, T> = (Result<D, ParseErrorType>, T);
 pub trait Parser: Sized {
     type ParsedDataType;
     type Tokens: TokenStream;
+    // I wanna:
+    // type ParseResult = (Result<Self::ParsedDataType, ParseErrorType>, Self::Tokens);
 
-    // type ParseResult = Result<Self::ParsedDataType, ParseErrorType>;
     fn parse(&self, tokens: Self::Tokens) -> ParseResult<Self::ParsedDataType, Self::Tokens>;
-        // (Result<Self::ParsedDataType, ParseErrorType>, Self::Tokens);
+}
 
-
+trait ParserComb: Parser {
     fn or<P>(self, parser: P) -> Or<Self,P>
-        where P: Parser<Tokens=Self::Tokens,
-                                ParsedDataType=Self::ParsedDataType>
-    {
-        Or {
-            first: self,
-            second: parser
-        }
+      where P: Parser<Tokens=Self::Tokens, ParsedDataType=Self::ParsedDataType> {
+        Or { first: self, second: parser }
     }
 
     fn and<P>(self, parser: P) -> And<Self, P>
-        where P: Parser<Tokens=Self::Tokens>
-    {
-        And {
-            first: self,
-            second: parser
-        }
+      where P: Parser<Tokens=Self::Tokens> {
+        And { first: self, second: parser }
     }
 
+    fn skip<P>(self, parser: P) -> Skip<Self, P>
+      where P: Parser<Tokens=Self::Tokens> {
+        Skip { actual: self, skiped: parser }
+    }
 
     fn map<F>(self, f: F) -> MapedParser<F, Self> where Self: Sized {
-        MapedParser {
-            f: f,
-            parser: self
-        }
+        MapedParser { f: f, parser: self }
     }
 }
 
-// impl<P: Parser> ParserExt for P {}
+impl<P: Parser> ParserComb for P {}
+
+// TODO CHECK THIS
+impl<'a, I, O, P: ?Sized> Parser for &'a  P
+    where I: TokenStream,
+          P: Parser<ParsedDataType = O, Tokens = I>
+{
+    type ParsedDataType = O;
+    type Tokens = I;
+
+    fn parse(&self, tokens: Self::Tokens) -> ParseResult<Self::ParsedDataType, Self::Tokens> {
+        (*self).parse(tokens)
+    }
+}
 
 
 // ================================ MapedParser ================================
@@ -120,17 +126,14 @@ where
 // ================================ OR ================================
 pub struct Or<P1,P2>
 where P1: Parser,
-      P2: Parser,
-{
-    first: P1,
-    second: P2
-}
+      P2: Parser
+{ first: P1, second: P2 }
 
 impl<R, T, P1, P2> Parser for Or<P1, P2>
 where P1: Parser<Tokens=T, ParsedDataType=R>,
       P2: Parser<Tokens=T, ParsedDataType=R>,
-      T: TokenStream + Clone
-{
+      T: TokenStream + Clone {
+
     type ParsedDataType = R;
     type Tokens = T;
 
@@ -149,11 +152,8 @@ where P1: Parser<Tokens=T, ParsedDataType=R>,
 // ================================ Seq ================================
 pub struct And<P1,P2>
 where P1: Parser,
-      P2: Parser,
-{
-    first: P1,
-    second: P2
-}
+      P2: Parser
+{ first: P1, second: P2 }
 
 impl< T, P1, P2> Parser for And<P1, P2>
 where P1: Parser<Tokens=T>,
@@ -164,64 +164,83 @@ where P1: Parser<Tokens=T>,
     type Tokens = T;
 
     fn parse(&self, tokens: Self::Tokens) -> ParseResult<Self::ParsedDataType, Self::Tokens> {
-
-
+               
         let (first_res, other) = self.first.parse(tokens.clone());
-        // try!(first_res, );
-
-        if !first_res.is_ok() {
-            return (Err(ParseErrorType::default()), tokens);
+        if first_res.is_ok() {
+            let (second_res, other2) = self.second.parse(other);
+            if second_res.is_ok() {
+                return (Ok((first_res.unwrap(), second_res.unwrap())), other2);
+            }
         }
-
-        let (second_res, other2) = self.second.parse(other);
-        if !second_res.is_ok() {
-            return (Err(ParseErrorType::default()), tokens);
-        }
-        return (Ok((first_res.unwrap(), second_res.unwrap())), other2);
+        return (Err(()), tokens);
     }
 }
 
 
+// ================================ Skip ================================
+pub struct Skip<P1,P2>
+where P1: Parser,
+      P2: Parser {
+    actual: P1,
+    skiped: P2,
+}
 
+impl< T, P1, P2> Parser for Skip<P1, P2>
+where P1: Parser<Tokens=T>,
+      P2: Parser<Tokens=T>,
+      T: TokenStream + Clone {
+    type ParsedDataType = P1::ParsedDataType;
+    type Tokens = T;
 
+    fn parse(&self, tokens: Self::Tokens) -> ParseResult<Self::ParsedDataType, Self::Tokens> {
+        let (res, other) = (&self.actual).and(&self.skiped).parse(tokens.clone());
+
+        if res.is_ok() {
+            return (Ok(res.unwrap().0), other);
+        }
+        return (Err(()), tokens);
+
+    }
+}
 
 // ================================ PredicateParser ================================
 
 // хранить замыкание в поле структуры или создать trait и каждый раз перегружать метод?
 struct PredicateParser<F, T>
-    where F: Fn(T) -> bool {
+    where F: Fn(T::TokenType) -> bool,
+    T: TokenStream {
     valid_cheker: F,
     _phantom: PhantomData<T>
 }
 
 impl<F, T> PredicateParser<F, T>
-    where F: Fn(T) -> bool
+    where F: Fn(T::TokenType) -> bool,
+    T: TokenStream 
 {
     fn new(f: F) -> Self {
         PredicateParser { valid_cheker: f, _phantom: PhantomData }
     }
 
-    fn is_valid(&self,arg: T) -> bool {
+    fn is_valid(&self, arg: T::TokenType) -> bool {
         (&self.valid_cheker)(arg)
     }
 }
 
 // ================================ CharsParser ================================
-type CharsParser<'a, F> = PredicateParser<F, &'a char>;
+// type CharsParser<'a, F> = PredicateParser<F, &'a str>;
 
-impl<'a, F> Parser for CharsParser<'a, F>
-where F: Fn(&char) -> bool {
-// where F: for<'r> Fn(&'r char) -> bool {
+impl<'a, F> Parser for PredicateParser<F, &'a str>
+where F: Fn(<&'a str as TokenStream>::TokenType) -> bool, {
 
     type ParsedDataType = String;
     type Tokens = &'a str;
 
-    fn parse(&self, tokens: &'a str) -> ParseResult<Self::ParsedDataType, Self::Tokens> {
+    fn parse(&self, tokens: Self::Tokens) -> ParseResult<Self::ParsedDataType, Self::Tokens> {
 
         let mut final_parsed_offset = 0;
         let res_str = tokens.char_indices()
             // .take(2)
-            .take_while(|&(_,c)| self.is_valid(&c))
+            .take_while(|&(_,c)| self.is_valid(c))
             .map(|(i,c)| { final_parsed_offset = i+1; return c; })
             .collect::<String>();
 
@@ -248,14 +267,14 @@ fn or_test() {
         Space
     }
 
-    let num_parser = CharsParser::new(|c:&char| c.is_numeric())
+    let num_parser = PredicateParser::new(|c:char| c.is_numeric())
         .map(|s: String| NumOrString::Num(s.parse::<i32>().unwrap()));
 
-    let uppercase_parser = CharsParser::new(|c:&char| c.is_uppercase())
-        .map(|s: String| NumOrString::Str(s));
+    let uppercase_parser = PredicateParser::new(|c:char| c.is_uppercase())
+        .map(|s| NumOrString::Str(s));
 
-    let space_parser = CharsParser::new(|c:&char| c == &' ')
-        .map(|_: String| NumOrString::Space);
+    let space_parser = PredicateParser::new(|c| c == ' ')
+        .map(|_| NumOrString::Space);
 
     let num_or_uppercase = num_parser
                             .or(space_parser)
@@ -286,10 +305,10 @@ fn or_test() {
 #[test]
 fn and_test() {
 
-    let num_parser = CharsParser::new(|c:&char| c.is_numeric())
+    let num_parser = PredicateParser::new(|c:char| c.is_numeric())
         .map(|s: String| (s.parse::<i32>().unwrap()));
     {
-        let uppercase_parser = CharsParser::new(|c:&char| c.is_uppercase())
+        let uppercase_parser = PredicateParser::new(|c:char| c.is_uppercase())
             .map(|s: String| (s));
 
 
@@ -315,9 +334,46 @@ fn and_test() {
 
 
 
+
+
+#[test]
+fn skip_test() {
+
+
+    let num_parser = PredicateParser::new(|c:char| c.is_numeric())
+        .map(|s: String| s.parse::<i32>().unwrap());
+
+    let uppercase_parser = PredicateParser::new(|c:char| c.is_uppercase())
+        .map(|s| s);
+
+    let space_parser = PredicateParser::new(|c| c == ' ')
+        .map(|_| ());
+
+    let num_space_uppercase = num_parser
+                            .skip(space_parser)
+                            .and(uppercase_parser);
+
+
+    let test_list = &[
+        ("633 XA",     (Ok((633,"XA".to_string())), "")),
+        ("5",         (Err(()),                    "5")),
+        ("633X",      (Err(()),                     "633X")),
+        ("XA",        (Err(()),                      "XA")),
+        ("500 FFbar",  (Ok((500,"FF".to_string())),   "bar")),
+    ];
+
+    for t in test_list {
+        let res = num_space_uppercase.parse(t.0);
+        println!("{} {:?}", t.0, res);
+        assert_eq!(res, t.1);
+    }
+}
+
+
+
 #[test]
 fn num_parser_test() -> () {
-    let num_parser = CharsParser::new(|c:&char| c.is_numeric());
+    let num_parser = PredicateParser::new(|c:char| c.is_numeric());
 
     let num_parser_num = num_parser
         .map(|x:String| x.parse::<i32>().unwrap());
