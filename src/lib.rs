@@ -280,8 +280,6 @@ impl<'a, F> Parser for PredicateParser<F, &'a str>
 // ================================ main ================================
 
 
-fn main() {}
-
 #[test]
 fn or_test() {
     #[derive(Debug, PartialEq)]
