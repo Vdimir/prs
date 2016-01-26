@@ -86,8 +86,9 @@ trait ParserComb: Parser {
         }
     }
 
-    fn map<F>(self, f: F) -> MapedParser<F, Self>
-        where Self: Sized
+    fn map<F, B>(self, f: F) -> MapedParser<F, Self>
+        where Self: Sized,
+              F: Fn(Self::ParsedDataType) -> B
     {
         MapedParser {
             f: f,
@@ -218,9 +219,40 @@ impl<T, P1, P2> Parser for Skip<P1, P2>
             return (Ok(res.unwrap().0), other);
         }
         return (Err(()), tokens);
-
     }
 }
+
+// ================================ Repetition ================================
+pub struct Rep<P> {
+    parser: P,
+}
+
+impl<P> Parser for Rep<P> where P: Parser
+{
+    type ParsedDataType =  Box<[P::ParsedDataType]>;
+    type Tokens = P::Tokens;
+
+    fn parse(&self, tokens: Self::Tokens) -> ParseResult<Self::ParsedDataType, Self::Tokens> {
+
+        let mut results = Vec::new();
+        let mut other = tokens;
+        loop {
+            let parse_res = self.parser.parse(other);
+            let res = parse_res.0;
+            other = parse_res.1;
+            if !res.is_ok() {
+                break;
+            }
+            results.push(res.unwrap());
+        }
+        if results.len() > 0 {
+            return (Ok(results.into_boxed_slice()), other);
+        }
+        return (Err(()), other);
+    }
+}
+
+
 
 // ================================ PredicateParser ================================
 
@@ -345,12 +377,7 @@ fn and_test() {
             assert_eq!(res, t.1);
         }
     }
-
 }
-
-
-
-
 
 #[test]
 fn skip_test() {
@@ -375,6 +402,34 @@ fn skip_test() {
 
     for t in test_list {
         let res = num_space_uppercase.parse(t.0);
+        println!("{} {:?}", t.0, res);
+        assert_eq!(res, t.1);
+    }
+}
+
+
+
+#[test]
+fn rep_test() {
+
+
+    let num_parser = PredicateParser::new(|c: char| c.is_numeric())
+                         .map(|s| s.parse::<i32>().unwrap());
+
+    let space_parser = PredicateParser::new(|c| c == ' ').map(|_| ());
+
+    let list_of_nums_sum = (Rep { parser: num_parser.skip(space_parser) })
+                               .map(|x| x.iter().fold(0, |acc, &x| acc + x));
+
+    let test_list = &[("5", (Err(()), "5")),
+                      ("1 2 3 4 50  12 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 ",
+                       (Ok(100), "")),
+                      ("633X", (Err(()), "633X")),
+                      ("XA", (Err(()), "XA")),
+                      ("500 20  bar", (Ok(520), "bar"))];
+
+    for t in test_list {
+        let res = list_of_nums_sum.parse(t.0);
         println!("{} {:?}", t.0, res);
         assert_eq!(res, t.1);
     }
