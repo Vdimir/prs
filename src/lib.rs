@@ -38,12 +38,6 @@ impl<'a> IterableTokenStream<Chars<'a>> for &'a str {
     }
 }
 
-// use std::str::CharIndices;
-// impl<'a> IterableTokenStream<CharIndices<'a>> for &'a str {
-//     fn iter(&self) -> CharIndices<'a> {
-//         return self.char_indices()
-//     }
-// }
 
 // ================================ trait Parser ================================
 pub type ParseErrorType = ();
@@ -252,7 +246,24 @@ impl<P> Parser for Rep<P> where P: Parser
     }
 }
 
+// ================================ Mabye ================================
+pub struct Mabye<P> {
+    parser: P,
+}
 
+impl<P> Parser for Mabye<P> where P: Parser
+{
+    type ParsedDataType = Option<P::ParsedDataType>;
+    type Tokens = P::Tokens;
+
+    fn parse(&self, tokens: Self::Tokens) -> ParseResult<Self::ParsedDataType, Self::Tokens> {
+        let (res, other) = self.parser.parse(tokens);
+
+        // if self.parser wont return original tokens on error,
+        // these result would be wrong
+        return (Ok(res.ok()), other);
+    }
+}
 
 // ================================ PredicateParser ================================
 
@@ -309,7 +320,7 @@ impl<'a, F> Parser for PredicateParser<F, &'a str>
 }
 
 
-// ================================ main ================================
+// ================================ Tests ================================
 
 
 #[test]
@@ -347,20 +358,15 @@ fn or_test() {
         println!("{} {:?}", t.0, res);
         assert_eq!(res, t.1);
     }
-
-
 }
-
 
 #[test]
 fn and_test() {
-
     let num_parser = PredicateParser::new(|c: char| c.is_numeric())
                          .map(|s: String| (s.parse::<i32>().unwrap()));
     {
         let uppercase_parser = PredicateParser::new(|c: char| c.is_uppercase())
                                    .map(|s: String| (s));
-
 
         let num_or_uppercase = num_parser.and(uppercase_parser);
 
@@ -381,8 +387,6 @@ fn and_test() {
 
 #[test]
 fn skip_test() {
-
-
     let num_parser = PredicateParser::new(|c: char| c.is_numeric())
                          .map(|s: String| s.parse::<i32>().unwrap());
 
@@ -392,7 +396,6 @@ fn skip_test() {
 
     let num_space_uppercase = num_parser.skip(space_parser)
                                         .and(uppercase_parser);
-
 
     let test_list = &[("633 XA", (Ok((633, "XA".to_string())), "")),
                       ("5", (Err(()), "5")),
@@ -408,24 +411,37 @@ fn skip_test() {
 }
 
 
+#[test]
+fn mabye_test() {
+    let num_parser = PredicateParser::new(|c: char| c.is_numeric())
+                         .map(|s| s.parse::<i32>().unwrap());
+
+    let mabye_num = Mabye { parser: num_parser };
+
+    let test_list = &[("633x", (Ok(Some(633)), "x")), ("X5", (Ok(None), "X5"))];
+
+    for t in test_list {
+        let res = mabye_num.parse(t.0);
+        println!("{} {:?}", t.0, res);
+        assert_eq!(res, t.1);
+    }
+}
 
 #[test]
 fn rep_test() {
-
-
     let num_parser = PredicateParser::new(|c: char| c.is_numeric())
                          .map(|s| s.parse::<i32>().unwrap());
 
     let space_parser = PredicateParser::new(|c| c == ' ').map(|_| ());
 
-    let list_of_nums_sum = (Rep { parser: num_parser.skip(space_parser) })
+    let list_of_nums_sum = (Rep { parser: num_parser.skip(Mabye { parser: space_parser }) })
                                .map(|x| x.iter().fold(0, |acc, &x| acc + x));
 
-    let test_list = &[("5", (Err(()), "5")),
-                      ("1 2 3 4 50  12 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 ",
+    let test_list = &[("5", (Ok(5), "")),
+                      ("1 2 3 4 50  12 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1",
                        (Ok(100), "")),
-                      ("633X", (Err(()), "633X")),
-                      ("XA", (Err(()), "XA")),
+                      ("633X", (Ok(633), "X")),
+                      (" 5XA", (Err(()), " 5XA")),
                       ("500 20  bar", (Ok(520), "bar"))];
 
     for t in test_list {
@@ -434,8 +450,6 @@ fn rep_test() {
         assert_eq!(res, t.1);
     }
 }
-
-
 
 #[test]
 fn num_parser_test() -> () {
