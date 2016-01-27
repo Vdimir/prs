@@ -43,18 +43,17 @@ impl<'a> IterableTokenStream<Chars<'a>> for &'a str {
 pub type ParseErrorType = ();
 pub type ParseResult<D, T> = (Result<D, ParseErrorType>, T);
 
-pub trait Parser: Sized {
+pub trait Parser<T: TokenStream>: Sized {
     type ParsedDataType;
-    type Tokens: TokenStream;
     // I wanna:
+    // type Tokens = T;
     // type ParseResult = (Result<Self::ParsedDataType, ParseErrorType>, Self::Tokens);
-
-    fn parse(&self, tokens: Self::Tokens) -> ParseResult<Self::ParsedDataType, Self::Tokens>;
+    fn parse(&self, tokens: T) -> ParseResult<Self::ParsedDataType, T>;
 }
 
-trait ParserComb: Parser {
+trait ParserComb<T>: Parser<T> where T : TokenStream  {
     fn or<P>(self, parser: P) -> Or<Self, P>
-        where P: Parser<Tokens = Self::Tokens, ParsedDataType = Self::ParsedDataType>
+        where P: Parser<T, ParsedDataType = Self::ParsedDataType>
     {
         Or {
             first: self,
@@ -63,7 +62,7 @@ trait ParserComb: Parser {
     }
 
     fn and<P>(self, parser: P) -> And<Self, P>
-        where P: Parser<Tokens = Self::Tokens>
+        where P: Parser<T>
     {
         And {
             first: self,
@@ -72,7 +71,7 @@ trait ParserComb: Parser {
     }
 
     fn skip<P>(self, parser: P) -> Skip<Self, P>
-        where P: Parser<Tokens = Self::Tokens>
+        where P: Parser<T>
     {
         Skip {
             actual: self,
@@ -91,22 +90,23 @@ trait ParserComb: Parser {
     }
 }
 
-impl<P: Parser> ParserComb for P {}
+impl<T, P> ParserComb<T> for P
+    where T: TokenStream,
+          P: Parser<T>
+{}
 
-// TODO CHECK THIS
-impl<'a, I, O, P: ?Sized> Parser for &'a P
-    where I: TokenStream,
-          P: Parser<ParsedDataType = O, Tokens = I>
-{
-    type ParsedDataType = O;
-    type Tokens = I;
+// // TODO CHECK THIS
+// impl<'a, I, O, P> Parser<I> for &'a P
+//     where I: TokenStream,
+//           P: Parser<I, ParsedDataType = O>
+// {
+//     type ParsedDataType = O;
+//     // type Tokens = I;
 
-    fn parse(&self, tokens: Self::Tokens) -> ParseResult<Self::ParsedDataType, Self::Tokens> {
-        (*self).parse(tokens)
-    }
-}
-
-
+//     fn parse(&self, tokens: I) -> ParseResult<Self::ParsedDataType, I> {
+//         (*self).parse(tokens)
+//     }
+// }
 // ================================ MapedParser ================================
 
 pub struct MapedParser<F, P> {
@@ -114,15 +114,15 @@ pub struct MapedParser<F, P> {
     parser: P,
 }
 
-impl<F, B, P, Tokens> Parser for MapedParser<F, P>
-    where P: Parser<Tokens = Tokens>,
+impl<F, B, P, Tokens> Parser<Tokens> for MapedParser<F, P>
+    where P: Parser<Tokens>,
           F: Fn(P::ParsedDataType) -> B,
           Tokens: TokenStream
 {
     type ParsedDataType = B;
-    type Tokens = Tokens;
+    // type Tokens = Tokens;
 
-    fn parse(&self, tokens: Tokens) -> ParseResult<Self::ParsedDataType, Self::Tokens> {
+    fn parse(&self, tokens: Tokens) -> ParseResult<Self::ParsedDataType, Tokens> {
         let orgiginal = self.parser.parse(tokens);
 
         return (orgiginal.0.map(&self.f), orgiginal.1);
@@ -130,23 +130,20 @@ impl<F, B, P, Tokens> Parser for MapedParser<F, P>
 }
 
 // ================================ OR ================================
-pub struct Or<P1, P2>
-    where P1: Parser,
-          P2: Parser
-{
+pub struct Or<P1, P2> {
     first: P1,
     second: P2,
 }
 
-impl<R, T, P1, P2> Parser for Or<P1, P2>
-    where P1: Parser<Tokens = T, ParsedDataType = R>,
-          P2: Parser<Tokens = T, ParsedDataType = R>,
+impl<R, T, P1, P2> Parser<T> for Or<P1, P2>
+    where P1: Parser<T, ParsedDataType = R>,
+          P2: Parser<T, ParsedDataType = R>,
           T: TokenStream + Clone
 {
     type ParsedDataType = R;
-    type Tokens = T;
+    // type Tokens = T;
 
-    fn parse(&self, tokens: Self::Tokens) -> ParseResult<Self::ParsedDataType, Self::Tokens> {
+    fn parse(&self, tokens: T) -> ParseResult<Self::ParsedDataType, T> {
 
         // TODO without clone ?
         let res = self.first.parse(tokens.clone());
@@ -159,23 +156,20 @@ impl<R, T, P1, P2> Parser for Or<P1, P2>
 
 
 // ================================ Seq ================================
-pub struct And<P1, P2>
-    where P1: Parser,
-          P2: Parser
-{
+pub struct And<P1, P2> {
     first: P1,
     second: P2,
 }
 
-impl<T, P1, P2> Parser for And<P1, P2>
-    where P1: Parser<Tokens = T>,
-          P2: Parser<Tokens = T>,
+impl<T, P1, P2> Parser<T> for And<P1, P2>
+    where P1: Parser<T>,
+          P2: Parser<T>,
           T: TokenStream + Clone
 {
     type ParsedDataType = (P1::ParsedDataType, P2::ParsedDataType);
-    type Tokens = T;
+    // type Tokens = T;
 
-    fn parse(&self, tokens: Self::Tokens) -> ParseResult<Self::ParsedDataType, Self::Tokens> {
+    fn parse(&self, tokens: T) -> ParseResult<Self::ParsedDataType, T> {
 
         let (first_res, other) = self.first.parse(tokens.clone());
         if first_res.is_ok() {
@@ -190,27 +184,32 @@ impl<T, P1, P2> Parser for And<P1, P2>
 
 
 // ================================ Skip ================================
-pub struct Skip<P1, P2>
-    where P1: Parser,
-          P2: Parser
-{
+pub struct Skip<P1, P2> {
     actual: P1,
     skiped: P2,
 }
 
-impl<T, P1, P2> Parser for Skip<P1, P2>
-    where P1: Parser<Tokens = T>,
-          P2: Parser<Tokens = T>,
+impl<T, P1, P2> Parser<T> for Skip<P1, P2>
+    where P1: Parser<T>,
+          P2: Parser<T>,
           T: TokenStream + Clone
 {
     type ParsedDataType = P1::ParsedDataType;
-    type Tokens = T;
+    // type Tokens = T;
 
-    fn parse(&self, tokens: Self::Tokens) -> ParseResult<Self::ParsedDataType, Self::Tokens> {
-        let (res, other) = (&self.actual).and(&self.skiped).parse(tokens.clone());
+    fn parse(&self, tokens: T) -> ParseResult<Self::ParsedDataType, T> {
+        // let (res, other) = (&self.actual).and(&self.skiped).parse(tokens.clone());
+        // if res.is_ok() {
+        //     return (Ok(res.unwrap().0), other);
+        // }
+        // return (Err(()), tokens);
 
-        if res.is_ok() {
-            return (Ok(res.unwrap().0), other);
+        let (first_res, other) = self.actual.parse(tokens.clone());
+        if first_res.is_ok() {
+            let (second_res, other2) = self.skiped.parse(other);
+            if second_res.is_ok() {
+                return (Ok(first_res.unwrap()), other2);
+            }
         }
         return (Err(()), tokens);
     }
@@ -221,12 +220,12 @@ pub struct Rep<P> {
     parser: P,
 }
 
-impl<P> Parser for Rep<P> where P: Parser
+impl<T: TokenStream, P> Parser<T> for Rep<P> where P: Parser<T>
 {
     type ParsedDataType =  Box<[P::ParsedDataType]>;
-    type Tokens = P::Tokens;
+    // type Tokens = P::Tokens;
 
-    fn parse(&self, tokens: Self::Tokens) -> ParseResult<Self::ParsedDataType, Self::Tokens> {
+    fn parse(&self, tokens: T) -> ParseResult<Self::ParsedDataType, T> {
 
         let mut results = Vec::new();
         let mut other = tokens;
@@ -251,12 +250,12 @@ pub struct Mabye<P> {
     parser: P,
 }
 
-impl<P> Parser for Mabye<P> where P: Parser
+impl<T: TokenStream, P> Parser<T> for Mabye<P> where P: Parser<T>
 {
     type ParsedDataType = Option<P::ParsedDataType>;
-    type Tokens = P::Tokens;
+    // type Tokens = P::Tokens;
 
-    fn parse(&self, tokens: Self::Tokens) -> ParseResult<Self::ParsedDataType, Self::Tokens> {
+    fn parse(&self, tokens: T) -> ParseResult<Self::ParsedDataType, T> {
         let (res, other) = self.parser.parse(tokens);
 
         // if self.parser wont return original tokens on error,
@@ -269,11 +268,11 @@ impl<P> Parser for Mabye<P> where P: Parser
 // ================================ xxxxxxxxx ================================
 // ================================ xxxxxxxxx ================================
 
-trait Checker<T> {
-    fn is_valid(&self, arg: T) -> bool;
+trait Checker<T> where
+          T: TokenStream {
+    fn is_valid(&self, arg: T::TokenType) -> bool;
 }
 
-// хранить замыкание в поле структуры или создать trait и каждый раз перегружать метод?
 pub struct PredicateParser<F, T>
     where F: Fn(T::TokenType) -> bool,
           T: TokenStream
@@ -294,7 +293,7 @@ impl<F, T> PredicateParser<F, T>
     }
 }
 
-impl<F, T> Checker<T::TokenType> for PredicateParser<F, T>
+impl<F, T> Checker<T> for PredicateParser<F, T>
     where F: Fn(T::TokenType) -> bool,
           T: TokenStream
 {
@@ -303,14 +302,16 @@ impl<F, T> Checker<T::TokenType> for PredicateParser<F, T>
     }
 }
 
+
 // ================================ StrParser ================================
 
-impl<'a, F> Parser for PredicateParser<F, &'a str> where F: Fn(char) -> bool
+// impl<'a, P> Parser<&'a str> for PredicateParser<P, &'a str> where P: Fn(char) -> bool
+impl<'a, P> Parser<&'a str> for P where P: Checker<&'a str>
 {
     type ParsedDataType = &'a str;
-    type Tokens = &'a str;
+//    type Tokens = &'a str;
 
-    fn parse(&self, tokens: Self::Tokens) -> ParseResult<Self::ParsedDataType, Self::Tokens> {
+    fn parse(&self, tokens: &'a str) -> ParseResult<Self::ParsedDataType, &'a str> {
 
         let parsed_offset = tokens.iter()
                                   .take_while(|&c| self.is_valid(c))
