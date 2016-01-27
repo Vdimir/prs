@@ -11,13 +11,13 @@ fn or_test() {
         Space,
     }
 
-    let num_parser = PredicateParser::new(|c: char| c.is_numeric())
-                         .map(|s| NumOrString::Num(s.parse::<i32>().unwrap()));
+    let num_parser = GreedyParser::new(|c: &char| c.is_numeric())
+                         .map(|s: &str| NumOrString::Num(s.parse::<i32>().unwrap()));
 
-    let uppercase_parser = PredicateParser::new(|c: char| c.is_uppercase())
+    let uppercase_parser = GreedyParser::new(|c: &char| c.is_uppercase())
                                .map(|s| NumOrString::Str(s));
 
-    let space_parser = PredicateParser::new(|c| c == ' ').map(|_| NumOrString::Space);
+    let space_parser = GreedyParser::new(|c: &char| c == &' ').map(|_| NumOrString::Space);
 
     let num_or_uppercase = num_parser.or(space_parser)
                                      .or(uppercase_parser);
@@ -41,10 +41,10 @@ fn or_test() {
 
 #[test]
 fn and_test() {
-    let num_parser = PredicateParser::new(|c: char| c.is_numeric())
-                         .map(|s| (s.parse::<i32>().unwrap()));
+    let num_parser = GreedyParser::new(|c: &char| c.is_numeric())
+                         .map(|s: &str| (s.parse::<i32>().unwrap()));
     {
-        let uppercase_parser = PredicateParser::new(|c: char| c.is_uppercase());
+        let uppercase_parser = GreedyParser::new(|c: &char| c.is_uppercase());
 
         let num_or_uppercase = num_parser.and(uppercase_parser);
 
@@ -65,12 +65,12 @@ fn and_test() {
 
 #[test]
 fn skip_test() {
-    let num_parser = PredicateParser::new(|c: char| c.is_numeric())
-                         .map(|s| s.parse::<i32>().unwrap());
+    let num_parser = GreedyParser::new(|c: &char| c.is_numeric())
+                         .map(|s: &str| s.parse::<i32>().unwrap());
 
-    let uppercase_parser = PredicateParser::new(|c: char| c.is_uppercase()).map(|s| s);
+    let uppercase_parser = GreedyParser::new(|c: &char| c.is_uppercase());
 
-    let space_parser = PredicateParser::new(|c| c == ' ').map(|_| ());
+    let space_parser = GreedyParser::new(|c: &char| c == &' ').map(|_| ());
 
     let num_space_uppercase = num_parser.skip(space_parser)
                                         .and(uppercase_parser);
@@ -91,8 +91,8 @@ fn skip_test() {
 
 #[test]
 fn mabye_test() {
-    let num_parser = PredicateParser::new(|c: char| c.is_numeric())
-                         .map(|s| s.parse::<i32>().unwrap());
+    let num_parser = GreedyParser::new(|c: &char| c.is_numeric())
+                         .map(|s: &str| s.parse::<i32>().unwrap());
 
     let mabye_num = maybe(num_parser);
 
@@ -107,10 +107,10 @@ fn mabye_test() {
 
 #[test]
 fn rep_test() {
-    let num_parser = PredicateParser::new(|c: char| c.is_numeric())
-                         .map(|s| s.parse::<i32>().unwrap());
+    let num_parser = GreedyParser::new(|c: &char| c.is_numeric())
+                         .map(|s: &str| s.parse::<i32>().unwrap());
 
-    let space_parser = PredicateParser::new(|c| c == ' ').map(|_| ());
+    let space_parser = GreedyParser::new(|c: &char| c == &' ').map(|_| ());
 
     let list_of_nums_sum = rep(num_parser.skip(maybe(space_parser)))
                                .map(|x| x.iter().fold(0, |acc, &x| acc + x));
@@ -131,9 +131,9 @@ fn rep_test() {
 
 #[test]
 fn num_parser_test() -> () {
-    let num_parser = PredicateParser::new(|c: char| c.is_numeric());
+    let num_parser = GreedyParser::new(|c: &char| c.is_numeric());
 
-    let num_parser_num = num_parser.map(|x| x.parse::<i32>().unwrap());
+    let num_parser_num = num_parser.map(|x: &str| x.parse::<i32>().unwrap());
 
     let test_list = &[("633xa", (Ok(633), "xa")),
                       ("-1", (Err(()), "-1")),

@@ -2,7 +2,7 @@
 // *
 // *
 
-use pars::{Parser, ParseResult, TokenStream};
+use pars::{Parse, ParseResult, TokenStream};
 
 // ================================ MapedParser ================================
 pub struct MapedParser<F, P> {
@@ -10,8 +10,8 @@ pub struct MapedParser<F, P> {
     parser: P,
 }
 
-impl<F, B, P, Tokens> Parser<Tokens> for MapedParser<F, P>
-    where P: Parser<Tokens>,
+impl<F, B, P, Tokens> Parse<Tokens> for MapedParser<F, P>
+    where P: Parse<Tokens>,
           F: Fn(P::ParsedDataType) -> B,
           Tokens: TokenStream
 {
@@ -30,13 +30,12 @@ pub struct Or<P1, P2> {
     second: P2,
 }
 
-impl<R, T, P1, P2> Parser<T> for Or<P1, P2>
-    where P1: Parser<T, ParsedDataType = R>,
-          P2: Parser<T, ParsedDataType = R>,
+impl<R, T, P1, P2> Parse<T> for Or<P1, P2>
+    where P1: Parse<T, ParsedDataType = R>,
+          P2: Parse<T, ParsedDataType = R>,
           T: TokenStream + Clone
 {
     type ParsedDataType = R;
-    // type Tokens = T;
 
     fn parse(&self, tokens: T) -> ParseResult<Self::ParsedDataType, T> {
 
@@ -55,9 +54,9 @@ pub struct And<P1, P2> {
     second: P2,
 }
 
-impl<T, P1, P2> Parser<T> for And<P1, P2>
-    where P1: Parser<T>,
-          P2: Parser<T>,
+impl<T, P1, P2> Parse<T> for And<P1, P2>
+    where P1: Parse<T>,
+          P2: Parse<T>,
           T: TokenStream + Clone
 {
     type ParsedDataType = (P1::ParsedDataType, P2::ParsedDataType);
@@ -81,9 +80,9 @@ pub struct Skip<P1, P2> {
     skiped: P2,
 }
 
-impl<T, P1, P2> Parser<T> for Skip<P1, P2>
-    where P1: Parser<T>,
-          P2: Parser<T>,
+impl<T, P1, P2> Parse<T> for Skip<P1, P2>
+    where P1: Parse<T>,
+          P2: Parse<T>,
           T: TokenStream + Clone
 {
     type ParsedDataType = P1::ParsedDataType;
@@ -112,7 +111,7 @@ pub struct Rep<P> {
     parser: P,
 }
 
-impl<T: TokenStream, P> Parser<T> for Rep<P> where P: Parser<T>
+impl<T: TokenStream, P> Parse<T> for Rep<P> where P: Parse<T>
 {
     type ParsedDataType =  Box<[P::ParsedDataType]>;
 
@@ -141,7 +140,7 @@ pub struct Mabye<P> {
     parser: P,
 }
 
-impl<T: TokenStream, P> Parser<T> for Mabye<P> where P: Parser<T>
+impl<T: TokenStream, P> Parse<T> for Mabye<P> where P: Parse<T>
 {
     type ParsedDataType = Option<P::ParsedDataType>;
 
@@ -156,9 +155,9 @@ impl<T: TokenStream, P> Parser<T> for Mabye<P> where P: Parser<T>
 
 
 // ================================ ParserComb ================================
-pub trait ParserComb<T>: Parser<T> where T : TokenStream  {
+pub trait ParserComb<T>: Parse<T> where T : TokenStream  {
     fn or<P>(self, parser: P) -> Or<Self, P>
-        where P: Parser<T, ParsedDataType = Self::ParsedDataType>
+        where P: Parse<T, ParsedDataType = Self::ParsedDataType>
     {
         Or {
             first: self,
@@ -167,7 +166,7 @@ pub trait ParserComb<T>: Parser<T> where T : TokenStream  {
     }
 
     fn and<P>(self, parser: P) -> And<Self, P>
-        where P: Parser<T>
+        where P: Parse<T>
     {
         And {
             first: self,
@@ -176,7 +175,7 @@ pub trait ParserComb<T>: Parser<T> where T : TokenStream  {
     }
 
     fn skip<P>(self, parser: P) -> Skip<Self, P>
-        where P: Parser<T>
+        where P: Parse<T>
     {
         Skip {
             actual: self,
@@ -197,14 +196,14 @@ pub trait ParserComb<T>: Parser<T> where T : TokenStream  {
 }
 
 pub fn maybe<T, P>(parser: P) -> Mabye<P>
-    where P: Parser<T>,
+    where P: Parse<T>,
           T: TokenStream
 {
     Mabye { parser: parser }
 }
 
 pub fn rep<T, P>(parser: P) -> Rep<P>
-    where P: Parser<T>,
+    where P: Parse<T>,
           T: TokenStream
 {
     Rep { parser: parser }
@@ -212,5 +211,5 @@ pub fn rep<T, P>(parser: P) -> Rep<P>
 
 impl<T, P> ParserComb<T> for P
     where T: TokenStream,
-          P: Parser<T>
+          P: Parse<T>
 {}
