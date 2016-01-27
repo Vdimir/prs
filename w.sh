@@ -7,6 +7,6 @@ while true; do
     else
         cargo run
     fi
-    change=$(inotifywait -e close_write,moved_to,create src/*.rs)
+    change=$(inotifywait -e close_write,moved_to,create */*.rs)
     echo $change changed
 done
