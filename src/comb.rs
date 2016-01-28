@@ -10,17 +10,15 @@ pub struct MapedParser<F, P> {
     parser: P,
 }
 
-impl<F, B, P, Tokens> Parse<Tokens> for MapedParser<F, P>
-    where P: Parse<Tokens>,
+impl<F, B, P, T> Parse<T> for MapedParser<F, P>
+    where P: Parse<T>,
           F: Fn(P::ParsedDataType) -> B,
-          Tokens: TokenStream
+          T: TokenStream
 {
     type ParsedDataType = B;
 
-    fn parse(&self, tokens: Tokens) -> ParseResult<Self::ParsedDataType, Tokens> {
-        let orgiginal = self.parser.parse(tokens);
-
-        return (orgiginal.0.map(&self.f), orgiginal.1);
+    fn parse(&self, tokens: T) -> ParseResult<Self::ParsedDataType, T> {
+        return self.parser.parse(tokens).map(&self.f);
     }
 }
 
@@ -39,12 +37,12 @@ impl<R, T, P1, P2> Parse<T> for Or<P1, P2>
 
     fn parse(&self, tokens: T) -> ParseResult<Self::ParsedDataType, T> {
 
-        // TODO without clone ?
-        let res = self.first.parse(tokens.clone());
-        if res.0.is_ok() {
-            return res;
+        let first_res = self.first.parse(tokens);
+        if first_res.is_ok() {
+            return first_res;
         }
-        return self.second.parse(tokens);
+        // on fail previous parser should return orgiginal tokens
+        return self.second.parse(first_res.other);
     }
 }
 
@@ -63,14 +61,18 @@ impl<T, P1, P2> Parse<T> for And<P1, P2>
 
     fn parse(&self, tokens: T) -> ParseResult<Self::ParsedDataType, T> {
 
-        let (first_res, other) = self.first.parse(tokens.clone());
-        if first_res.is_ok() {
-            let (second_res, other2) = self.second.parse(other);
-            if second_res.is_ok() {
-                return (Ok((first_res.unwrap(), second_res.unwrap())), other2);
-            }
+        let ParseResult { res:first_res, other } = self.first.parse(tokens);
+
+        if !first_res.is_ok() {
+            return ParseResult::fail((), other);
         }
-        return (Err(()), tokens);
+
+        let ParseResult { res:second_res, other } = self.second.parse(other);
+        if !second_res.is_ok() {
+            return ParseResult::fail((), other);
+        }
+
+        return ParseResult::succ((first_res.unwrap(), second_res.unwrap()), other);
     }
 }
 
@@ -87,23 +89,11 @@ impl<T, P1, P2> Parse<T> for Skip<P1, P2>
 {
     type ParsedDataType = P1::ParsedDataType;
 
+
     fn parse(&self, tokens: T) -> ParseResult<Self::ParsedDataType, T> {
-        let (first_res, other) = self.actual.parse(tokens.clone());
-        if first_res.is_ok() {
-            let (second_res, other2) = self.skiped.parse(other);
-            if second_res.is_ok() {
-                return (Ok(first_res.unwrap()), other2);
-            }
-        }
-        return (Err(()), tokens);
+        let res = (&self.actual).and(&self.skiped).parse(tokens);
+        return res.map(|(a, _)| a);
     }
-    // fn parse(&self, tokens: T) -> ParseResult<Self::ParsedDataType, T> {
-    //         let (res, other) = (&self.actual).and(&self.skiped).parse(tokens.clone());
-    //     if res.is_ok() {
-    //         return (Ok(res.unwrap().0), other);
-    //     }
-    //     return (Err(()), tokens);
-    // }
 }
 
 // ================================ Repetition ================================
@@ -121,17 +111,17 @@ impl<T: TokenStream, P> Parse<T> for Rep<P> where P: Parse<T>
         let mut other = tokens;
         loop {
             let parse_res = self.parser.parse(other);
-            let res = parse_res.0;
-            other = parse_res.1;
+            other = parse_res.other;
+            let res = parse_res.res;
             if !res.is_ok() {
                 break;
             }
             results.push(res.unwrap());
         }
         if results.len() > 0 {
-            return (Ok(results.into_boxed_slice()), other);
+            return ParseResult::succ(results.into_boxed_slice(), other);
         }
-        return (Err(()), other);
+        return ParseResult::fail((), other);
     }
 }
 
@@ -145,17 +135,15 @@ impl<T: TokenStream, P> Parse<T> for Mabye<P> where P: Parse<T>
     type ParsedDataType = Option<P::ParsedDataType>;
 
     fn parse(&self, tokens: T) -> ParseResult<Self::ParsedDataType, T> {
-        let (res, other) = self.parser.parse(tokens);
+        let ParseResult {res, other} = self.parser.parse(tokens);
 
-        // if self.parser wont return original tokens on error,
-        // these result would be wrong
-        return (Ok(res.ok()), other);
+        return ParseResult::succ(res.ok(), other);
     }
 }
 
 
 // ================================ ParserComb ================================
-pub trait ParserComb<T>: Parse<T> where T : TokenStream  {
+pub trait ParserComb<T>: Parse<T> where T : TokenStream, Self: Sized  {
     fn or<P>(self, parser: P) -> Or<Self, P>
         where P: Parse<T, ParsedDataType = Self::ParsedDataType>
     {

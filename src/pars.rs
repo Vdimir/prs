@@ -3,19 +3,34 @@
 // *
 
 use std::marker::PhantomData;
-use std::default::Default;
-
 // ================================ TokenStream ================================
-pub trait Checker<T: TokenStream> {
-    fn satisfies(&self, arg: &T::TokenType) -> bool;
+pub trait Verify<T> {
+    fn satisfies(&self, arg: &T) -> bool;
+}
+
+struct IsEqual<'a, T: 'a>(&'a T);
+
+impl<'a, T: PartialEq> Verify<T> for IsEqual<'a, T> {
+    fn satisfies(&self, arg: &T) -> bool {
+        arg == self.0
+    }
+}
+
+struct Predicate<T, F>(F, PhantomData<T>);
+
+impl<T, F> Verify<T> for Predicate<T, F> where F: Fn(&T) -> bool
+{
+    fn satisfies(&self, arg: &T) -> bool {
+        (self.0)(arg)
+    }
 }
 
 pub trait TokenStream: Sized {
     type TokenType;
 
     fn get(&self) -> Option<(Self::TokenType, Self)>;
-    fn get_if<C>(&self, condition: &C) -> Option<(Self::TokenType, Self)>
-        where C: Checker<Self>
+    fn get_if<'a, C>(&self, condition: &C) -> Option<(Self::TokenType, Self)>
+        where C: Verify<Self::TokenType>
     {
         self.get().and_then(|s| {
             if condition.satisfies(&s.0) {
@@ -32,16 +47,15 @@ pub trait IterableTokenStream<It>: TokenStream
     fn iter(&self) -> It;
 }
 
-pub trait RangeTokenStream: TokenStream + Sized
+pub trait RangeTokenStream: TokenStream
 {
-    fn get_while<C>(&self, condition: &C) -> (Option<Self>, Self) where C: Checker<Self>;
+    fn get_while<C>(&self, condition: &C) -> Option<(Self, Self)> where C: Verify<Self::TokenType>;
 }
 
 
 impl<'a> TokenStream for &'a str {
     type TokenType = char;
 
-    // TODO test
     fn get(&self) -> Option<(Self::TokenType, Self)> {
         match self.chars().next() {
             Some(c) => Some((c, &self[c.len_utf8()..])),
@@ -51,155 +65,123 @@ impl<'a> TokenStream for &'a str {
 }
 
 impl<'a> RangeTokenStream for &'a str {
-    fn get_while<C>(&self, condition: &C) -> (Option<Self>, Self)
-        where C: Checker<Self>
+    fn get_while<C>(&self, condition: &C) -> Option<(Self, Self)>
+        where C: Verify<Self::TokenType>
     {
-        let parsed_offset = self.chars()
-                                .take_while(|c| condition.satisfies(c))
-                                .fold(0, |len, c: char| len + c.len_utf8());
-
-        if parsed_offset > 0 {
-            return (Some(&self[..parsed_offset]), &self[parsed_offset..]);
+        let offset = self.chars()
+                         .take_while(|c| condition.satisfies(c))
+                         .fold(0, |len, c: char| len + c.len_utf8());
+        if offset == 0 {
+            return None;
         }
-        return (None, self);
+        return Some((&self[..offset], &self[offset..]));
     }
 }
 
-// ================================ trait Parser ================================
-pub type ParseErrorType = ();
-pub type ParseResult<D, T> = (Result<D, ParseErrorType>, T);
 
-pub trait Parse<T: TokenStream>: Sized {
-    // Default associated type not allowed yet
-    // type Tokens = T;
-    // type ParseResult = (Result<Self::ParsedDataType, ParseErrorType>, Self::Tokens);
+// ================================ ParseResult ================================
+pub enum ParseError<T> {
+    Expected(T),
+}
+
+pub struct ParseResult<R, S, E = ()> {
+    pub res: Result<R, E>,
+    pub other: S,
+}
+
+impl<R, S, E> ParseResult<R, S, E> {
+    pub fn succ(res: R, other: S) -> Self {
+        ParseResult {
+            res: Ok(res),
+            other: other,
+        }
+    }
+    pub fn fail(error: E, other: S) -> Self {
+        ParseResult {
+            res: Err(error),
+            other: other,
+        }
+    }
+
+    pub fn map<U, F>(self, op: F) -> ParseResult<U, S, E>
+        where F: FnOnce(R) -> U
+    {
+        ParseResult {
+            res: self.res.map(op),
+            other: self.other,
+        }
+    }
+
+    pub fn is_ok(&self) -> bool {
+        self.res.is_ok()
+    }
+}
+// ================================ trait Parse ================================
+
+// T is type of input
+pub trait Parse<T> {
     type ParsedDataType;
     fn parse(&self, tokens: T) -> ParseResult<Self::ParsedDataType, T>;
 }
 
-// TODO CHECK THIS
-// impl<'a, I, O, P> Parse<I> for &'a P
-//     where I: TokenStream,
-//           P: Parse<I, ParsedDataType = O>
-// {
-//     type ParsedDataType = O;
-//     // type Tokens = I;
 
-//     fn parse(&self, tokens: I) -> ParseResult<Self::ParsedDataType, I> {
-//         (*self).parse(tokens)
-//     }
-// }
-
-pub struct PredicateChecker<F, T>
-    where F: Fn(&T::TokenType) -> bool,
-          T: TokenStream
-{
-    valid_cheker: F,
-    _phantom: PhantomData<T>,
-}
-
-impl<F, T> Checker<T> for PredicateChecker<F, T>
-    where F: Fn(&T::TokenType) -> bool,
-          T: TokenStream
-{
-    fn satisfies(&self, arg: &T::TokenType) -> bool {
-        (&self.valid_cheker)(arg)
-    }
-}
-
-
-pub struct TokenChecker<T> {
+pub struct Token<T> {
     token: T,
 }
 
-impl<T> Checker<T> for TokenChecker<T::TokenType>
+
+
+impl<T> Parse<T> for Token<T::TokenType>
     where T: TokenStream,
           T::TokenType: PartialEq
 {
-    fn satisfies(&self, arg: &T::TokenType) -> bool {
-        &self.token == arg
+    type ParsedDataType = T::TokenType;
+    fn parse(&self, tokens: T) -> ParseResult<Self::ParsedDataType, T> {
+        let res_opt = tokens.get_if(&IsEqual(&self.token));
+        if res_opt.is_some() {
+            let (res, other) = res_opt.unwrap();
+            return ParseResult::succ(res, other);
+        }
+        return ParseResult::fail((), tokens);
     }
 }
 
-pub struct Parser<C> {
-    checker: C,
+
+pub struct Condition<F> {
+    condition: F,
 }
 
-impl<C> Parser<C> {
-    fn greedy(self) -> GreedyParser<C> {
-        GreedyParser { checker: self.checker }
-    }
-}
 
-pub struct GreedyParser<C> {
-    checker: C,
-}
-
-impl<F, T> From<F> for Parser<PredicateChecker<F, T>>
-    where T: TokenStream,
+impl<T, F> Parse<T> for Condition<F>
+    where T: RangeTokenStream,
           F: Fn(&T::TokenType) -> bool
 {
-    fn from(f: F) -> Parser<PredicateChecker<F, T>> {
-        Parser {
-            checker: PredicateChecker {
-                valid_cheker: f,
-                _phantom: PhantomData,
-            },
+    type ParsedDataType = T;
+    fn parse(&self, tokens: T) -> ParseResult<Self::ParsedDataType, T> {
+        let res = tokens.get_while(&Predicate(&self.condition, PhantomData));
+        if let Some((parsed, other)) = res {
+            return ParseResult::succ(parsed, other);
         }
+        return ParseResult::fail((), tokens);
     }
 }
 
-impl<T> From<T> for Parser<TokenChecker<T>> where T: TokenStream
+pub fn pred<F>(f: F) -> Condition<F> {
+    Condition { condition: f }
+}
+pub fn token<T>(t: T) -> Token<T> {
+    Token { token: t }
+}
+
+// ================================ impl Parse for ref ================================
+// TODO CHECK THIS
+impl<'a, I, O, P> Parse<I> for &'a P
+    where I: TokenStream,
+          P: Parse<I, ParsedDataType = O>
 {
-    fn from(t: T) -> Parser<TokenChecker<T>> {
-        Parser { checker: TokenChecker { token: t } }
-    }
-}
+    type ParsedDataType = O;
 
-impl<C> Parser<C> {
-    pub fn new<T>(t: T) -> Self
-        where Self: From<T>
-    {
-        Parser::from(t)
-    }
-}
-
-
-impl<C> GreedyParser<C> {
-    pub fn new<T>(t: T) -> Self
-        where Parser<C>: From<T>
-    {
-        Parser::from(t).greedy()
-    }
-}
-
-// ================================ Parser ================================
-
-impl<S, C> Parse<S> for GreedyParser<C>
-    where C: Checker<S>,
-          S: RangeTokenStream
-{
-    type ParsedDataType = S;
-
-    fn parse(&self, tokens: S) -> ParseResult<Self::ParsedDataType, S> {
-        let (res, other) = tokens.get_while(&self.checker);
-        return (res.ok_or(ParseErrorType::default()), other);
-    }
-}
-
-
-impl<S, C> Parse<S> for Parser<C>
-    where C: Checker<S>,
-          S: TokenStream
-{
-    type ParsedDataType = S::TokenType;
-
-    fn parse(&self, tokens: S) -> ParseResult<Self::ParsedDataType, S> {
-        let res_opt = tokens.get_if(&self.checker);
-        if res_opt.is_none() {
-            return (Err(ParseErrorType::default()), tokens);
-        }
-        let res = res_opt.unwrap();
-        return (Ok(res.0), res.1);
+    fn parse(&self, tokens: I) -> ParseResult<Self::ParsedDataType, I> {
+        (*self).parse(tokens)
     }
 }
