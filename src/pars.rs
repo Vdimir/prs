@@ -207,6 +207,7 @@ impl<T, C> Parse<T> for Parser<C, T>
     }
 }
 
+#[derive(Clone)]
 pub struct GrParser<C, T: TokenStream>{
     checker: C,
     _p: PhantomData<T>

@@ -160,23 +160,74 @@ fn num_parser_test() -> () {
 
 
 
-// #[test]
-// fn expr_test() {
-//     enum Node {
-//         Num(i32),
-//         Add(Box<(Node, Node)>),
-//         Sub(Box<(Node, Node)>),
-//         Mul(Box<(Node, Node)>),
-//         Div(Box<(Node, Node)>),
-//     }
+#[test]
+fn expr_test() {
 
-// let num = pred(|c: &char| c.is_numeric()).map(|s: &str| s.parse::<i32>().unwrap());
+    #[derive(PartialEq, Debug, Clone)]
+    enum Node {
+        Num(i32),
+        Add(Box<(Node, Node)>),
+        Sub(Box<(Node, Node)>),
+        Mul(Box<(Node, Node)>),
+        Div(Box<(Node, Node)>),
+    }
 
-//     let add_symb = token('+');
-//     let sub_symb = token('-');
-//     let add_sub_symb = add_symb.or(sub_symb);
-//     assert_eq!(add_sub_symb.parse("+-"), (Ok('+'), "-"));
-// }
+    fn node_pair(lhs: Node, rhs: Node) -> Box<(Node, Node)> {
+        Box::new((lhs, rhs))
+    }
+
+    fn create_op(op_symb: char, lhs: Node, rhs: Node) -> Node {
+        match op_symb {
+            '+' => Node::Add(node_pair(lhs, rhs)),
+            '-' => Node::Sub(node_pair(lhs, rhs)),
+            '*' => Node::Mul(node_pair(lhs, rhs)),
+            '/' => Node::Div(node_pair(lhs, rhs)),
+            _ => panic!("{:?} not allowed", op_symb),
+        }
+    }
+
+    macro_rules! num {
+        () => (pred(|c: &char| c.is_numeric())
+                .greedy()
+                .skip(maybe(token(' ').greedy()))
+                .map( |s: &str| Node::Num(s.parse::<i32>().unwrap())))
+    }
+
+    let mul_symb = token('*').skip(maybe(token(' ').greedy()));
+    let div_symb = token('/').skip(maybe(token(' ').greedy()));;
+    let mul_div = mul_symb.or(div_symb);
+
+    macro_rules! mul_op {
+        () => (num!()
+                    .and(rep(mul_div.and(num!())))
+                    .map(move |(f, r)| {
+                        let mut n = f;
+                        for &(op, ref rh) in r.iter() {
+                            n = create_op(op, n, rh.clone());
+                        }
+                        return n;
+                    }))
+    }
+
+    // let add_symb = token('+').skip(maybe(token(' ').greedy()));
+    // let sub_symb = token('-').skip(maybe(token(' ').greedy()));;
+    // let add_sub_symb = add_symb.or(sub_symb);
+    // let add_op = mul_op!()
+    //                 .and(maybe(rep(add_sub_symb.and(mul_op!()))))
+    //                 .map(|(f, r)| {
+    //                     let mut n = f;
+    //                     for &(op, ref rh) in r.iter() {
+    //                         n = create_op(op, n, rh.clone());
+    //                     }
+    //                     return n;
+    //                 });
+
+    assert_eq!(mul_op!().parse("5 /  9  * 3 ").res.unwrap(),
+               Node::Mul(
+                Box::new((Node::Div(Box::new((Node::Num(5), Node::Num(9)))),
+                                   Node::Num(3)))));
+    // Ok((5, vec![('+', 9), ('+', 3)].into_boxed_slice())));
+}
 
 #[test]
 fn simple_char_test() {
@@ -186,10 +237,9 @@ fn simple_char_test() {
     // let x_char = token('x');
     let y_char = token('y');
 
-    let xy = x_char
-                .or(y_char.clone())
-                .and(y_char);
-    assert_eq!(xy.parse("yyx").res, Ok(('y','y')));
+    let xy = x_char.or(y_char.clone())
+                   .and(y_char);
+    assert_eq!(xy.parse("yyx").res, Ok(('y', 'y')));
 
     let x_char = token('x').greedy();
     assert_eq!(x_char.parse("xxy").res, Ok("xx"));

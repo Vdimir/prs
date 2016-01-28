@@ -5,6 +5,7 @@
 use pars::{Parse, ParseResult, TokenStream};
 
 // ================================ MapedParser ================================
+#[derive(Clone)]
 pub struct MapedParser<F, P> {
     f: F,
     parser: P,
