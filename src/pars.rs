@@ -8,7 +8,10 @@ pub trait Verify<T> {
     fn satisfies(&self, arg: &T) -> bool;
 }
 
-struct IsEqual<'a, T: 'a>(&'a T);
+pub struct IsEqual<'a, T: 'a>(&'a T);
+
+#[derive(Clone)]
+pub struct IsEqualOwn<T>(T);
 
 impl<'a, T: PartialEq> Verify<T> for IsEqual<'a, T> {
     fn satisfies(&self, arg: &T) -> bool {
@@ -16,7 +19,13 @@ impl<'a, T: PartialEq> Verify<T> for IsEqual<'a, T> {
     }
 }
 
-struct Predicate<T, F>(F, PhantomData<T>);
+impl<'a, T: PartialEq> Verify<T> for IsEqualOwn<T> {
+    fn satisfies(&self, arg: &T) -> bool {
+        *arg == self.0
+    }
+}
+
+pub struct Predicate<T, F>(F, PhantomData<T>);
 
 impl<T, F> Verify<T> for Predicate<T, F> where F: Fn(&T) -> bool
 {
@@ -119,25 +128,77 @@ impl<R, S, E> ParseResult<R, S, E> {
 // ================================ trait Parse ================================
 
 // T is type of input
-pub trait Parse<T> {
+pub trait Parse<T>: Sized {
     type ParsedDataType;
     fn parse(&self, tokens: T) -> ParseResult<Self::ParsedDataType, T>;
 }
 
 
-pub struct Token<T> {
-    token: T,
+// pub struct Token<T: TokenStream> {
+//     token: T::TokenType,
+// }
+
+// impl<T> Parse<T> for Token<T>
+//     where T: TokenStream,
+//           T::TokenType: PartialEq
+// {
+//     type ParsedDataType = T::TokenType;
+//     fn parse(&self, tokens: T) -> ParseResult<Self::ParsedDataType, T> {
+//         let res_opt = tokens.get_if(&IsEqual(&self.token));
+//         if res_opt.is_some() {
+//             let (res, other) = res_opt.unwrap();
+//             return ParseResult::succ(res, other);
+//         }
+//         return ParseResult::fail((), tokens);
+//     }
+// }
+
+// pub struct Condition<F> {
+//     condition: F,
+// }
+
+// impl<T, F> Parse<T> for Condition<F>
+//     where T: RangeTokenStream,
+//           F: Fn(&T::TokenType) -> bool
+// {
+//     type ParsedDataType = T;
+//     fn parse(&self, tokens: T) -> ParseResult<Self::ParsedDataType, T> {
+//         let res = tokens.get_while(&Predicate(&self.condition, PhantomData));
+//         if let Some((parsed, other)) = res {
+//             return ParseResult::succ(parsed, other);
+//         }
+//         return ParseResult::fail((), tokens);
+//     }
+// }
+
+// pub fn pred<F>(f: F) -> Condition<F> {
+//     Condition { condition: f }
+// }
+// pub fn token<T: TokenStream>(t: T::TokenType) -> Token<T> {
+//     Token { token: t }
+// }
+
+//where T: TokenStream ,C: Verify<T::TokenType>
+#[derive(Clone)]
+pub struct Parser<C, T>
+{
+    checker: C,
+    _p: PhantomData<T>
 }
 
+impl<C, T: TokenStream> Parser<C, T> {
+    pub fn greedy(self) -> GrParser<C, T> {
+        GrParser { checker: self.checker, _p: PhantomData }
+    }
+}
 
-
-impl<T> Parse<T> for Token<T::TokenType>
+impl<T, C> Parse<T> for Parser<C, T>
     where T: TokenStream,
-          T::TokenType: PartialEq
+          C: Verify<T::TokenType>
 {
     type ParsedDataType = T::TokenType;
     fn parse(&self, tokens: T) -> ParseResult<Self::ParsedDataType, T> {
-        let res_opt = tokens.get_if(&IsEqual(&self.token));
+        let res_opt = tokens.get_if(&self.checker);
         if res_opt.is_some() {
             let (res, other) = res_opt.unwrap();
             return ParseResult::succ(res, other);
@@ -146,19 +207,18 @@ impl<T> Parse<T> for Token<T::TokenType>
     }
 }
 
-
-pub struct Condition<F> {
-    condition: F,
+pub struct GrParser<C, T: TokenStream>{
+    checker: C,
+    _p: PhantomData<T>
 }
 
-
-impl<T, F> Parse<T> for Condition<F>
+impl<T, C> Parse<T> for GrParser<C, T>
     where T: RangeTokenStream,
-          F: Fn(&T::TokenType) -> bool
+          C: Verify<T::TokenType>
 {
     type ParsedDataType = T;
     fn parse(&self, tokens: T) -> ParseResult<Self::ParsedDataType, T> {
-        let res = tokens.get_while(&Predicate(&self.condition, PhantomData));
+        let res = tokens.get_while(&self.checker);
         if let Some((parsed, other)) = res {
             return ParseResult::succ(parsed, other);
         }
@@ -166,12 +226,15 @@ impl<T, F> Parse<T> for Condition<F>
     }
 }
 
-pub fn pred<F>(f: F) -> Condition<F> {
-    Condition { condition: f }
+pub fn pred<T: TokenStream, F>(f: F) -> Parser<Predicate<T::TokenType, F>, T> {
+    Parser { checker: Predicate(f, PhantomData), _p: PhantomData }
 }
-pub fn token<T>(t: T) -> Token<T> {
-    Token { token: t }
+
+pub fn token<T: TokenStream>(t: T::TokenType) -> Parser<IsEqualOwn<T::TokenType>, T> {
+    Parser { checker: IsEqualOwn(t), _p: PhantomData }
 }
+
+
 
 // ================================ impl Parse for ref ================================
 // TODO CHECK THIS

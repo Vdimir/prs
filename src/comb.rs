@@ -23,6 +23,7 @@ impl<F, B, P, T> Parse<T> for MapedParser<F, P>
 }
 
 // ================================ OR ================================
+#[derive(Clone)]
 pub struct Or<P1, P2> {
     first: P1,
     second: P2,
@@ -61,7 +62,8 @@ impl<T, P1, P2> Parse<T> for And<P1, P2>
 
     fn parse(&self, tokens: T) -> ParseResult<Self::ParsedDataType, T> {
 
-        let ParseResult { res:first_res, other } = self.first.parse(tokens);
+        // TODO without clone
+        let ParseResult { res:first_res, other } = self.first.parse(tokens.clone());
 
         if !first_res.is_ok() {
             return ParseResult::fail((), other);
@@ -69,7 +71,7 @@ impl<T, P1, P2> Parse<T> for And<P1, P2>
 
         let ParseResult { res:second_res, other } = self.second.parse(other);
         if !second_res.is_ok() {
-            return ParseResult::fail((), other);
+            return ParseResult::fail((), tokens);
         }
 
         return ParseResult::succ((first_res.unwrap(), second_res.unwrap()), other);
@@ -88,7 +90,6 @@ impl<T, P1, P2> Parse<T> for Skip<P1, P2>
           T: TokenStream + Clone
 {
     type ParsedDataType = P1::ParsedDataType;
-
 
     fn parse(&self, tokens: T) -> ParseResult<Self::ParsedDataType, T> {
         let res = (&self.actual).and(&self.skiped).parse(tokens);
