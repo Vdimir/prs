@@ -159,9 +159,9 @@ fn num_parser_test() -> () {
 
 
 
-
 #[test]
 fn expr_test() {
+
 
     #[derive(PartialEq, Debug, Clone)]
     enum Node {
@@ -172,60 +172,97 @@ fn expr_test() {
         Div(Box<(Node, Node)>),
     }
 
-    fn node_pair(lhs: Node, rhs: Node) -> Box<(Node, Node)> {
-        Box::new((lhs, rhs))
-    }
+    impl Node {
+        fn create_op(op_symb: char, lhs: Node, rhs: Node) -> Self {
+            match op_symb {
+                '+' => Node::Add(Self::node_pair(lhs, rhs)),
+                '-' => Node::Sub(Self::node_pair(lhs, rhs)),
+                '*' => Node::Mul(Self::node_pair(lhs, rhs)),
+                '/' => Node::Div(Self::node_pair(lhs, rhs)),
+                _ => panic!("{:?} not allowed", op_symb),
+            }
+        }
 
-    fn create_op(op_symb: char, lhs: Node, rhs: Node) -> Node {
-        match op_symb {
-            '+' => Node::Add(node_pair(lhs, rhs)),
-            '-' => Node::Sub(node_pair(lhs, rhs)),
-            '*' => Node::Mul(node_pair(lhs, rhs)),
-            '/' => Node::Div(node_pair(lhs, rhs)),
-            _ => panic!("{:?} not allowed", op_symb),
+        fn node_pair(lhs: Node, rhs: Node) -> Box<(Node, Node)> {
+            Box::new((lhs, rhs))
+        }
+
+        fn calc(&self) -> i32 {
+            match self {
+                &Node::Num(n) => n,
+                &Node::Add(ref box_pair) => box_pair.0.calc() + box_pair.1.calc(),
+                &Node::Mul(ref box_pair) => box_pair.0.calc() * box_pair.1.calc(),
+                &Node::Div(ref box_pair) => box_pair.0.calc() / box_pair.1.calc(),
+                &Node::Sub(ref box_pair) => box_pair.0.calc() - box_pair.1.calc(),
+            }
         }
     }
 
-    macro_rules! num {
-        () => (pred(|c: &char| c.is_numeric())
-                .greedy()
-                .skip(maybe(token(' ').greedy()))
-                .map( |s: &str| Node::Num(s.parse::<i32>().unwrap())))
+    fn list_to_tree((f, r): (Node, Option<Box<[(char, Node)]>>)) -> Node {
+        let mut n = f;
+        for &(op, ref rh) in r.unwrap_or(Box::new([])).iter() {
+            n = Node::create_op(op, n, rh.clone());
+        }
+        return n;
     }
 
-    let mul_symb = token('*').skip(maybe(token(' ').greedy()));
-    let div_symb = token('/').skip(maybe(token(' ').greedy()));;
-    let mul_div = mul_symb.or(div_symb);
 
-    macro_rules! mul_op {
-        () => (num!()
-                    .and(rep(mul_div.and(num!())))
-                    .map(move |(f, r)| {
-                        let mut n = f;
-                        for &(op, ref rh) in r.iter() {
-                            n = create_op(op, n, rh.clone());
-                        }
-                        return n;
-                    }))
-    }
 
-    // let add_symb = token('+').skip(maybe(token(' ').greedy()));
-    // let sub_symb = token('-').skip(maybe(token(' ').greedy()));;
-    // let add_sub_symb = add_symb.or(sub_symb);
-    // let add_op = mul_op!()
-    //                 .and(maybe(rep(add_sub_symb.and(mul_op!()))))
-    //                 .map(|(f, r)| {
-    //                     let mut n = f;
-    //                     for &(op, ref rh) in r.iter() {
-    //                         n = create_op(op, n, rh.clone());
-    //                     }
-    //                     return n;
-    //                 });
+    let num = || {
+        (pred(|c: &char| c.is_numeric())
+             .greedy()
+             .skip(maybe(token(' ').greedy()))
+             .map(|s: &str| Node::Num(s.parse::<i32>().unwrap())))
+    };
 
-    assert_eq!(mul_op!().parse("5 /  9  * 3 ").res.unwrap(),
-               Node::Mul(
-                Box::new((Node::Div(Box::new((Node::Num(5), Node::Num(9)))),
-                                   Node::Num(3)))));
+
+    let mul_op = || {
+        ({
+            let mul_symb = token('*').skip(maybe(token(' ').greedy()));
+            let div_symb = token('/').skip(maybe(token(' ').greedy()));;
+            let mul_div = mul_symb.or(div_symb);
+            num()
+                .and(maybe(rep(mul_div.and(num()))))
+                .map(list_to_tree)
+        })
+    };
+
+    assert_eq!(mul_op().parse("018 ").res.unwrap(), Node::Num(18));
+
+    let add_op = || {
+        let add_symb = token('+').skip(maybe(token(' ').greedy()));
+        let sub_symb = token('-').skip(maybe(token(' ').greedy()));;
+        let add_sub_symb = add_symb.or(sub_symb);
+        mul_op()
+            .and(maybe(rep(add_sub_symb.and(mul_op()))))
+            .map(list_to_tree)
+    };
+
+    assert_eq!(mul_op().parse("18 /  9  * 3 *1").res.unwrap().calc(), 6);
+    assert_eq!(add_op().parse("1+5 /  9  * 3").res.unwrap(),
+               Node::Add(Box::new((Node::Num(1),
+                                   Node::Mul(Box::new((Node::Div(Box::new((Node::Num(5),
+                                                                           Node::Num(9)))),
+                                                       Node::Num(3))))))));
+
+    assert_eq!(add_op()
+                   .parse("5+ 18/  9 - 5 * 2 - 7 + 20 / 10*2-6*8/3*7-63+5/2")
+                   .res
+                   .unwrap()
+                   .calc(),
+              5 + 18 / 9 - 5 * 2 - 7 + 20 / 10 * 2 - 6 * 8 / 3 * 7 - 63 + 5 / 2);
+
+
+    let parens_expr = (token('(')
+                           .skip(maybe(token(' ').greedy()))
+                           .and(add_op().skip(token(')').skip(maybe(token(' ').greedy())))))
+                          .map(|(_, a)| a);
+
+    assert_eq!(parens_expr.parse("( 5+ 18/  9 - 5 * 2 - 7 + 20 / 10*2-6*8/3*7-63+5/2  )")
+                          .res
+                          .unwrap()
+                          .calc(),
+               5 + 18 / 9 - 5 * 2 - 7 + 20 / 10 * 2 - 6 * 8 / 3 * 7 - 63 + 5 / 2);
     // Ok((5, vec![('+', 9), ('+', 3)].into_boxed_slice())));
 }
 
