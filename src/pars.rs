@@ -227,12 +227,29 @@ impl<T, C> Parse<T> for GrParser<C, T>
     }
 }
 
+pub struct FnParser<F>(F);
+// where F:Fn(T) -> ParseResult<R, T>;
+
+impl<T, R, F> Parse<T> for FnParser<F> where T:TokenStream, F:Fn(T) -> ParseResult<R, T>
+{
+    type ParsedDataType = R;
+
+    fn parse(&self, tokens: T) -> ParseResult<R, T> {
+        self.0(tokens)
+    }
+}
+
 pub fn pred<T: TokenStream, F>(f: F) -> Parser<Predicate<T::TokenType, F>, T> {
     Parser { checker: Predicate(f, PhantomData), _p: PhantomData }
 }
 
 pub fn token<T: TokenStream>(t: T::TokenType) -> Parser<IsEqualOwn<T::TokenType>, T> {
     Parser { checker: IsEqualOwn(t), _p: PhantomData }
+}
+
+pub fn fn_parser<T,R,F> (f:F) -> FnParser<F> where T:TokenStream, F:Fn(T) -> ParseResult<R, T>
+{
+    FnParser(f)
 }
 
 
@@ -249,3 +266,4 @@ impl<'a, I, O, P> Parse<I> for &'a P
         (*self).parse(tokens)
     }
 }
+

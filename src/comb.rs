@@ -105,7 +105,7 @@ pub struct Rep<P> {
 
 impl<T: TokenStream, P> Parse<T> for Rep<P> where P: Parse<T>
 {
-    type ParsedDataType =  Box<[P::ParsedDataType]>;
+    type ParsedDataType =  Vec<P::ParsedDataType>;
 
     fn parse(&self, tokens: T) -> ParseResult<Self::ParsedDataType, T> {
 
@@ -121,11 +121,75 @@ impl<T: TokenStream, P> Parse<T> for Rep<P> where P: Parse<T>
             results.push(res.unwrap());
         }
         if results.len() > 0 {
-            return ParseResult::succ(results.into_boxed_slice(), other);
+            return ParseResult::succ(results, other);
         }
         return ParseResult::fail((), other);
     }
 }
+
+
+// ================================ Iter ================================
+pub struct Iter< P, I> {
+    parser: P,
+    pub input: I
+}
+
+
+impl<P, I> Iterator for Iter<P, I>
+where P:Parse<I> , I : Clone{
+    
+    type Item = P::ParsedDataType;
+    fn next(&mut self) -> Option<Self::Item> {
+        // clone !!!
+        let res = self.parser.parse(self.input.clone());
+        if !res.is_ok() {
+            return None;
+        }
+        self.input = res.other;
+        return Some(res.res.unwrap());
+    }
+}
+
+pub fn iterate_parser_over_input<P,I>(p: P, inp: I) -> Iter<P, I>
+where P:Parse<I> {
+    Iter { parser: p, input: inp}
+}
+
+
+// ================================ IterRep ================================
+use std::iter::FromIterator;
+use std::marker::PhantomData;
+
+pub struct IterRep<P, R> {
+    parser: P,
+    _res_collection: PhantomData<R>
+}
+
+impl<T: TokenStream + Clone, P, R> Parse<T> for IterRep<P, R> where P: Parse<T>,
+R: FromIterator<P::ParsedDataType>
+{
+    type ParsedDataType =  R;
+
+    fn parse(&self, tokens: T) -> ParseResult<Self::ParsedDataType, T> {
+        let first_res = self.parser.parse(tokens.clone());
+        if !first_res.is_ok() {
+            return ParseResult::fail((), tokens);
+        }
+        let first = first_res.res.unwrap();
+
+        let mut it = iterate_parser_over_input(&self.parser, first_res.other);
+     
+
+        let results: R = Some(first)
+                        .into_iter()
+                        .chain(it.by_ref()).collect();
+        let other = it.input;
+
+        return ParseResult::succ(results, other);
+
+    }
+}
+
 
 // ================================ Mabye ================================
 pub struct Mabye<P> {
@@ -192,12 +256,19 @@ pub fn maybe<T, P>(parser: P) -> Mabye<P>
     Mabye { parser: parser }
 }
 
-pub fn rep<T, P>(parser: P) -> Rep<P>
+pub fn rep<T, P, R>(parser: P) -> IterRep<P, R>
     where P: Parse<T>,
           T: TokenStream
 {
-    Rep { parser: parser }
+    IterRep { parser: parser, _res_collection: PhantomData }
 }
+
+// pub fn rep<T, P>(parser: P) -> Rep<P>
+//     where P: Parse<T>,
+//           T: TokenStream
+// {
+//     Rep { parser: parser}
+// }
 
 impl<T, P> ParserComb<T> for P
     where T: TokenStream,
