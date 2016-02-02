@@ -287,18 +287,19 @@ fn expr_test() {
 
 #[test]
 fn simple_char_test() {
-    let x_char = token('x');
-    assert_eq!(x_char.parse("xxy").res, Ok('x'));
+    let x_char = token('x').or(token('y'));
+    assert_eq!(x_char.parse("xxy").res.ok(), Some('x'));
 
     // let x_char = token('x');
     let y_char = token('y');
 
     let xy = x_char.or(y_char.clone())
                    .and(y_char);
-    assert_eq!(xy.parse("yyx").res, Ok(('y', 'y')));
-
+    // println!("{:?}", xy.parse("yyx").other);
+    assert_eq!(xy.parse("yyx").res.ok(), Some(('y','y')));
+    // panic!("(())");
     let x_char = token('x').greedy();
-    assert_eq!(x_char.parse("xxy").res, Ok("xx"));
+    assert_eq!(x_char.parse("xxy").res.ok(), Some("xx"));
 
 
 }

@@ -2,7 +2,7 @@
 // *
 // *
 
-use pars::{Parse, ParseResult, TokenStream};
+use pars::{Parse, ParseResult, ParseError, ParserType, TokenStream};
 
 // ================================ MapedParser ================================
 #[derive(Clone)]
@@ -41,10 +41,17 @@ impl<R, T, P1, P2> Parse<T> for Or<P1, P2>
 
         let first_res = self.first.parse(tokens);
         if first_res.is_ok() {
-            return first_res;
+            return first_res;//.res.map_err(|e| e=ParseError::Expected(ParserType));
         }
         // on fail previous parser should return orgiginal tokens
         return self.second.parse(first_res.other);
+    }
+
+    fn parser_type(&self) -> ParserType {
+            ParserType::Or(
+                Box::new(self.first.parser_type()),
+                Box::new(self.second.parser_type())
+            )
     }
 }
 
@@ -67,12 +74,12 @@ impl<T, P1, P2> Parse<T> for And<P1, P2>
         let ParseResult { res:first_res, other } = self.first.parse(tokens.clone());
 
         if !first_res.is_ok() {
-            return ParseResult::fail((), other);
+            return ParseResult::fail(ParseError::Expected(self.first.parser_type()),other);
         }
 
         let ParseResult { res:second_res, other } = self.second.parse(other);
         if !second_res.is_ok() {
-            return ParseResult::fail((), tokens);
+            return ParseResult::fail(ParseError::Expected(self.second.parser_type()),tokens);
         }
 
         return ParseResult::succ((first_res.unwrap(), second_res.unwrap()), other);
@@ -123,7 +130,7 @@ impl<T: TokenStream, P> Parse<T> for Rep<P> where P: Parse<T>
         if results.len() > 0 {
             return ParseResult::succ(results, other);
         }
-        return ParseResult::fail((), other);
+        return ParseResult::fail(ParseError::Expected(self.parser.parser_type()),other);
     }
 }
 
@@ -137,7 +144,7 @@ pub struct Iter< P, I> {
 
 impl<P, I> Iterator for Iter<P, I>
 where P:Parse<I> , I : Clone{
-    
+
     type Item = P::ParsedDataType;
     fn next(&mut self) -> Option<Self::Item> {
         // clone !!!
@@ -173,12 +180,12 @@ R: FromIterator<P::ParsedDataType>
     fn parse(&self, tokens: T) -> ParseResult<Self::ParsedDataType, T> {
         let first_res = self.parser.parse(tokens.clone());
         if !first_res.is_ok() {
-            return ParseResult::fail((), tokens);
+            return ParseResult::fail(ParseError::Expected(self.parser_type()),tokens);
         }
         let first = first_res.res.unwrap();
 
         let mut it = iterate_parser_over_input(&self.parser, first_res.other);
-     
+
 
         let results: R = Some(first)
                         .into_iter()
