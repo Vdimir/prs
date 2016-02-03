@@ -3,30 +3,29 @@
 // *
 
 use std::marker::PhantomData;
-// ================================ TokenStream ================================
+
+
+// =============================================================================
+// ================================== Verify ==================================
+// =============================================================================
+
+/// Trait that check tokens
 pub trait Verify<T> {
     fn satisfies(&self, arg: &T) -> bool;
 }
 
-pub struct IsEqual<'a, T: 'a>(&'a T);
 
+/// Pass tokens that equal given
 #[derive(Clone)]
 pub struct IsEqualOwn<T>(T);
-
-impl<'a, T: PartialEq> Verify<T> for IsEqual<'a, T> {
-    fn satisfies(&self, arg: &T) -> bool {
-        arg == self.0
-    }
-}
-
 impl<'a, T: PartialEq> Verify<T> for IsEqualOwn<T> {
     fn satisfies(&self, arg: &T) -> bool {
         *arg == self.0
     }
 }
 
+/// Pass tokens than satisfies given predicate(closure or function)
 pub struct Predicate<T, F>(F, PhantomData<T>);
-
 impl<T, F> Verify<T> for Predicate<T, F> where F: Fn(&T) -> bool
 {
     fn satisfies(&self, arg: &T) -> bool {
@@ -34,12 +33,19 @@ impl<T, F> Verify<T> for Predicate<T, F> where F: Fn(&T) -> bool
     }
 }
 
+
+
+
+// =============================================================================
+// ================================ TokenStream ================================
+// =============================================================================
 pub trait TokenStream: Sized {
     type TokenType;
 
-    fn look_ahead(&self) -> Option<Self::TokenType>;
+    fn look_ahead(&mut self) -> Option<Self::TokenType>;
     fn get(self) -> (Option<Self::TokenType>, Self);
-    fn get_if<'a, C>(self, condition: &C) -> (Option<Self::TokenType>, Self)
+
+    fn get_if<'a, C>(mut self, condition: &C) -> (Option<Self::TokenType>, Self)
         where C: Verify<Self::TokenType>
     {
         let next_token = self.look_ahead();
@@ -53,21 +59,18 @@ pub trait TokenStream: Sized {
     }
 }
 
-// pub trait IterableTokenStream<It>: TokenStream
-//     where It: Iterator<Item=Self::TokenType> {
-//     fn iter(&self) -> It;
-// }
-
 pub trait RangeTokenStream: TokenStream
 {
-    fn get_while<C>(self, condition: &C) -> (Option<Self>, Self) where C: Verify<Self::TokenType>;
+    type RangeType;
+    fn get_while<C>(self, condition: &C) -> (Option<Self::RangeType>, Self)
+        where C: Verify<Self::TokenType>;
 }
 
 
 impl<'a> TokenStream for &'a str {
     type TokenType = char;
 
-    fn look_ahead(&self) -> Option<Self::TokenType>{
+    fn look_ahead(&mut self) -> Option<Self::TokenType> {
         self.chars().next()
     }
 
@@ -80,7 +83,8 @@ impl<'a> TokenStream for &'a str {
 }
 
 impl<'a> RangeTokenStream for &'a str {
-    fn get_while<C>(self, condition: &C) -> (Option<Self>, Self)
+    type RangeType = &'a str;
+    fn get_while<C>(self, condition: &C) -> (Option<Self::RangeType>, Self)
         where C: Verify<Self::TokenType>
     {
         let offset = self.chars()
@@ -94,39 +98,61 @@ impl<'a> RangeTokenStream for &'a str {
 }
 
 // struct IterableTokens<T>(T);
-// 
-// impl<T> TokenStream for IterableTokens<T>
-// where T: Iterator {
-//     type TokenType = T::Item;
-// 
-//     fn look_ahead(&self) -> Option<Self::TokenType> {
-// 
-//     }
-// 
-//     fn get(self) -> Option<(Self::TokenType, Self)> {
-//         unimplemented!();
-//         // match self.chars().next() {
-//             // Some(c) => Some((c, &self[c.len_utf8()..])),
-//             // None => None,
-//         // }
-//     }
-// }
 
+use std::iter::Peekable;
+
+impl<T> TokenStream for Peekable<T>
+    where T: Iterator,
+          T::Item: Clone
+{
+    type TokenType = T::Item;
+
+    fn look_ahead(&mut self) -> Option<Self::TokenType> {
+        self.peek().map(|a| a.clone())
+    }
+
+    fn get(mut self) -> (Option<Self::TokenType>, Self) {
+        (self.next(), self)
+    }
+}
+
+
+// use std::fmt::Debug;
+impl<'a, T> TokenStream for &'a [T]
+    where T: Clone
+{
+    type TokenType = T;
+
+    fn look_ahead(&mut self) -> Option<Self::TokenType> {
+        let r = self.first().cloned();
+        r
+    }
+
+    fn get(self) -> (Option<Self::TokenType>, Self) {
+        if self.len() == 0 {
+            (None, self)
+        } else {
+            (Some(self[0].clone()), &self[1..])
+        }
+    }
+}
+
+// =============================================================================
 // ================================ ParseResult ================================
-#[derive(Debug)]
+// =============================================================================
+#[derive(Debug, PartialEq)]
 pub enum ParseError {
     Expected(ParserType),
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum ParserType {
     Unknown,
     Named(String),
-    Or(Box<ParserType>, Box<ParserType>)
+    Or(Box<ParserType>, Box<ParserType>),
 }
 
-
-pub struct ParseResult<R, S > {
+pub struct ParseResult<R, S> {
     pub res: Result<R, ParseError>,
     pub other: S,
 }
@@ -147,19 +173,25 @@ impl<R, S> ParseResult<R, S> {
     }
 
     pub fn map<U, F>(self, op: F) -> ParseResult<U, S>
-        where F: FnOnce(R) -> U
-    {
+        where F: FnOnce(R) -> U {
         ParseResult {
             res: self.res.map(op),
             other: self.other,
         }
     }
 
+    pub fn to_tuple(self) -> (Result<R, ParseError>, S) {
+        (self.res, self.other)
+    }
+
     pub fn is_ok(&self) -> bool {
         self.res.is_ok()
     }
 }
+
+// =============================================================================
 // ================================ trait Parse ================================
+// =============================================================================
 
 // T is type of input
 pub trait Parse<T>: Sized {
@@ -170,19 +202,19 @@ pub trait Parse<T>: Sized {
     }
 }
 
-
-//where T: TokenStream ,C: Verify<T::TokenType>
 #[derive(Clone)]
-pub struct Parser<C, T>
-{
+pub struct Parser<C, T> {
     name: Option<String>,
     checker: C,
-    _p: PhantomData<T>
+    _p: PhantomData<T>,
 }
 
 impl<C, T: TokenStream> Parser<C, T> {
     pub fn greedy(self) -> GrParser<C, T> {
-        GrParser { checker: self.checker, _p: PhantomData }
+        GrParser {
+            checker: self.checker,
+            _p: PhantomData,
+        }
     }
 }
 
@@ -209,16 +241,16 @@ impl<T, C> Parse<T> for Parser<C, T>
 }
 
 #[derive(Clone)]
-pub struct GrParser<C, T: TokenStream>{
+pub struct GrParser<C, T: TokenStream> {
     checker: C,
-    _p: PhantomData<T>
+    _p: PhantomData<T>,
 }
 
 impl<T, C> Parse<T> for GrParser<C, T>
     where T: RangeTokenStream,
           C: Verify<T::TokenType>
 {
-    type ParsedDataType = T;
+    type ParsedDataType = T::RangeType;
     fn parse(&self, tokens: T) -> ParseResult<Self::ParsedDataType, T> {
         let (res, other) = tokens.get_while(&self.checker);
         if let Some(parsed) = res {
@@ -229,9 +261,10 @@ impl<T, C> Parse<T> for GrParser<C, T>
 }
 
 pub struct FnParser<F>(F);
-// where F:Fn(T) -> ParseResult<R, T>;
 
-impl<T, R, F> Parse<T> for FnParser<F> where T:TokenStream, F:Fn(T) -> ParseResult<R, T>
+impl<T, R, F> Parse<T> for FnParser<F>
+    where T: TokenStream,
+          F: Fn(T) -> ParseResult<R, T>
 {
     type ParsedDataType = R;
 
@@ -240,24 +273,49 @@ impl<T, R, F> Parse<T> for FnParser<F> where T:TokenStream, F:Fn(T) -> ParseResu
     }
 }
 
-pub fn pred<T: TokenStream, F>(f: F) -> Parser<Predicate<T::TokenType, F>, T> {
-    Parser { name: None, checker: Predicate(f, PhantomData), _p: PhantomData }
+// ====================================== FactoryMethods ======================================
+pub fn pred<T: TokenStream, F>(f: F) -> Parser<Predicate<T::TokenType, F>, T>
+    where F: Fn(&T::TokenType) -> bool
+{
+    Parser {
+        name: None,
+        checker: Predicate(f, PhantomData),
+        _p: PhantomData,
+    }
+}
+
+pub fn named_pred<T: TokenStream, F>(name: &str, f: F) -> Parser<Predicate<T::TokenType, F>, T>
+    where F: Fn(&T::TokenType) -> bool
+{
+    Parser {
+        name: Some(name.to_string()),
+        checker: Predicate(f, PhantomData),
+        _p: PhantomData,
+    }
 }
 
 pub fn token<T: TokenStream>(t: T::TokenType) -> Parser<IsEqualOwn<T::TokenType>, T>
-where T::TokenType: ToString {
-    Parser { name: Some(t.to_string()), checker: IsEqualOwn(t), _p: PhantomData }
+    where T::TokenType: ToString
+{
+    Parser {
+        name: Some(t.to_string()),
+        checker: IsEqualOwn(t),
+        _p: PhantomData,
+    }
 }
 
 
-pub fn fn_parser<T,R,F> (f:F) -> FnParser<F> where T:TokenStream, F:Fn(T) -> ParseResult<R, T>
+pub fn fn_parser<T, R, F>(f: F) -> FnParser<F>
+    where T: TokenStream,
+          F: Fn(T) -> ParseResult<R, T>
 {
     FnParser(f)
 }
 
 
-
-// ================================ impl Parse for ref ================================
+// =============================================================================
+// ================================ impl Parse for ref =========================
+// =============================================================================
 // TODO CHECK THIS
 impl<'a, I, O, P> Parse<I> for &'a P
     where I: TokenStream,

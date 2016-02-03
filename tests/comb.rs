@@ -4,17 +4,45 @@ extern crate prs;
 use prs::*;
 
 #[test]
+fn array_of_tokens_test() {
+    let tokens = ["655", "bar"];
+
+    let num_parser = named_pred("numb", |c: &&str| {
+        c.chars().all(|c| c.is_numeric())
+    });
+
+    // println!("{:?}", num_parser.parse(&tokens[..]).res);
+    assert_eq!(num_parser.parse(&tokens[..]).res,
+              Ok("655"));
+
+    let bar_parser = pred(|c: &&str| c == &"bar");
+
+    let tokens = &["bar", "655"];
+    assert_eq!(bar_parser.parse(&tokens[..]).res,
+              Ok("bar"));
+
+    let tokens = &["bare"];
+    assert_eq!(bar_parser.parse(&tokens[..]).res.is_err(),
+              true);
+
+
+    let tokens = &["655", "bar"];
+    assert_eq!(num_parser.and(bar_parser).parse(&tokens[..]).res,
+              Ok(("655", "bar")));
+    
+}
+
+#[test]
 fn parse_iter() {
-    let num_parser = pred(|c: &char| c.is_numeric());
+    let digit = pred(|c: &char| c.is_numeric());
 
-    let mut iter = iterate_parser_over_input(num_parser, "598x65");
+    let mut iter = iterate_parser_over_input(digit, "123.45");
 
-    assert_eq!(iter.next(), Some('5'));
-    assert_eq!(iter.next(), Some('9'));
-    assert_eq!(iter.next(), Some('8'));
+    assert_eq!(iter.next(), Some('1'));
+    assert_eq!(iter.next(), Some('2'));
+    assert_eq!(iter.next(), Some('3'));
     assert_eq!(iter.next(), None);
-    assert_eq!(iter.next(), None);
-    assert_eq!(iter.input, "x65");
+    assert_eq!(iter.input, ".45");
 }
 
 #[test]
@@ -38,14 +66,14 @@ fn or_test() {
                                      .or(uppercase_parser);
 
 
-    let test_list = &[("633XA", Some(NumOrString::Num(633)), "XA"),
-                      ("XA5", Some(NumOrString::Str("XA")), "5"),
-                      ("633", Some(NumOrString::Num(633)), ""),
-                      (" 633", Some(NumOrString::Space), "633"),
-                      ("   x ", Some(NumOrString::Space), "x "),
-                      ("d5A", None, "d5A"),
-                      ("6A33xa", Some(NumOrString::Num(6)), "A33xa"),
-                      ("FOO", Some(NumOrString::Str("FOO")), "")];
+    let test_list = &[
+                      ("123", Some(NumOrString::Num(123)), ""),
+                      ("123AB", Some(NumOrString::Num(123)), "AB"),
+                      ("FOO", Some(NumOrString::Str("FOO")), ""),
+                      ("AB123", Some(NumOrString::Str("AB")), "123"),
+                      (" 0", Some(NumOrString::Space), "0"),
+                      ("aA", None, "aA"),
+                      ];
 
 
     for t in test_list {
@@ -65,12 +93,12 @@ fn and_test() {
 
     let num_or_uppercase = num_parser.and(uppercase_parser);
 
-    let test_list = &[("633XA", Some((633, "XA")), ""),
+    let test_list = &[
+                      ("123AB", Some((123, "AB")), ""),
                       ("5", None, "5"),
-                      ("633X", Some((633, "X")), ""),
-                      ("XA", None, "XA"),
+                      ("A", None, "A"),
                       ("500FFbar", Some((500, "FF")), "bar"),
-                      ("d5A", None, "d5A")];
+                      ];
 
 
     for t in test_list {
@@ -94,12 +122,11 @@ fn skip_test() {
     let num_space_uppercase = num_parser.skip(space_parser)
                                         .and(uppercase_parser);
 
-    let test_list = &[("633 XA", Some((633, "XA")), ""),
+    let test_list = &[
                       ("5", None, "5"),
-                      ("633X", None, "633X"),
-                      ("XA", None, "XA"),
-                      ("500 FFbar", Some((500, "FF")), "bar")];
-
+                      ("123AB", None, "123AB"),
+                      ("123 AB", Some((123, "AB")), ""),
+                      ("123 ABcde", Some((123, "AB")), "cde")];
 
     for t in test_list {
         let parsed = num_space_uppercase.parse(t.0);
@@ -117,7 +144,7 @@ fn mabye_test() {
 
     let mabye_num = maybe(num_parser);
 
-    let test_list = &[("633x", Some(Some(633)), "x"), ("X5", Some(None), "X5")];
+    let test_list = &[("123", Some(Some(123)), ""), ("A1", Some(None), "A1")];
 
     for t in test_list {
         let parsed = mabye_num.parse(t.0);
@@ -137,13 +164,12 @@ fn rep_test() {
     let list_of_nums_sum = rep(num_parser.skip(maybe(space_parser)))
                                .map(|x: Vec<_>| x.iter().fold(0, |acc, &x| acc + x));
 
-    let test_list = &[("5", Some(5), ""),
-                      ("1 2 3 4 50  12 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1",
-                       Some(100),
-                       ""),
-                      ("633X", Some(633), "X"),
-                      (" 5XA", None, " 5XA"),
-                      ("500 20  bar", Some(520), "bar")];
+    let test_list = &[
+                      (" 1Aa", None, " 1Aa"),
+                      ("5", Some(5), ""),
+                      ("5 10 15 30 1 ", Some(61), ""),
+                      ("500 50  bar", Some(550), "bar")
+                      ];
 
     for t in test_list {
         let parsed = list_of_nums_sum.parse(t.0);
@@ -153,30 +179,7 @@ fn rep_test() {
 }
 
 #[test]
-fn num_parser_test() -> () {
-    let num_parser = pred(|c: &char| c.is_numeric()).greedy();
-
-    let num_parser_num = num_parser.map(|x: &str| x.parse::<i32>().unwrap());
-
-    let test_list = &[("633xa", Some(633), "xa"),
-                      ("-1", None, "-1"),
-                      ("633", Some(633), ""),
-                      ("a633xa", None, "a633xa"),
-                      ("6_33xa", Some(6), "_33xa"),
-                      ("s633a", None, "s633a")];
-
-    for t in test_list {
-        let parsed = num_parser_num.parse(t.0);
-        assert_eq!(parsed.res.ok(), t.1);
-        assert_eq!(parsed.other, t.2);
-    }
-}
-
-
-
-#[test]
 fn expr_test() {
-
 
     #[derive(PartialEq, Debug, Clone)]
     enum Node {
@@ -206,21 +209,19 @@ fn expr_test() {
             match self {
                 &Node::Num(n) => n,
                 &Node::Add(ref box_pair) => box_pair.0.calc() + box_pair.1.calc(),
+                &Node::Sub(ref box_pair) => box_pair.0.calc() - box_pair.1.calc(),
                 &Node::Mul(ref box_pair) => box_pair.0.calc() * box_pair.1.calc(),
                 &Node::Div(ref box_pair) => box_pair.0.calc() / box_pair.1.calc(),
-                &Node::Sub(ref box_pair) => box_pair.0.calc() - box_pair.1.calc(),
             }
         }
     }
 
-    fn list_to_tree((f, r): (Node, Option<Vec<(char, Node)>>)) -> Node {
-        let mut n = f;
+    fn list_to_tree((mut f, r): (Node, Option<Vec<(char, Node)>>)) -> Node {
         for &(op,  ref rh) in r.unwrap_or(Vec::new()).iter() {
-            n = Node::create_op(op, n, rh.clone());
+            f = Node::create_op(op, f, rh.clone());
         }
-        return n;
+        return f;
     }
-
 
     fn num<'a>(tokens: &'a str) -> ParseResult<Node, &'a str> {
         (pred(|c: &char| c.is_numeric())
@@ -229,7 +230,6 @@ fn expr_test() {
              .map(|s: &str| Node::Num(s.parse::<i32>().unwrap())))
             .parse(tokens)
     }
-
 
     fn parens_expr<'a>(tokens: &'a str) -> ParseResult<Node, &'a str> {
         (token('(')
@@ -250,8 +250,6 @@ fn expr_test() {
             .parse(tokens)
     }
 
-
-
     assert_eq!(fn_parser(mul_op).parse("018 ").res.unwrap(), Node::Num(18));
 
     fn add_op<'a>(tokens: &'a str) -> ParseResult<Node, &'a str> {
@@ -266,6 +264,7 @@ fn expr_test() {
 
     assert_eq!(fn_parser(mul_op).parse("18 /  9  * 3 *1").res.unwrap().calc(),
                6);
+
     assert_eq!(fn_parser(add_op).parse("1+5 /  9  * 3").res.unwrap(),
                Node::Add(Box::new((Node::Num(1),
                                    Node::Mul(Box::new((Node::Div(Box::new((Node::Num(5),
@@ -273,16 +272,10 @@ fn expr_test() {
                                                        Node::Num(3))))))));
 
     assert_eq!(fn_parser(add_op)
-                   .parse("5+ 18/  (9 - 5 * (2 - (7))) + (20) / 10*2-6*8/3*(7-63)+5/2")
+                   .parse("5+ 16 /  (9 + 5 * (2 - (7))) + (40) /10 *2-6*9/3*(7-5)+6/2")
                    .res
                    .unwrap()
-                   .calc(),
-               5 + 18 / (9 - 5 * (2 - 7)) + 20 / 10 * 2 - 6 * 8 / 3 * (7 - 63) + 5 / 2);
-
-
-
-
-    // Ok((5, vec![('+', 9), ('+', 3)].into_boxed_slice())));
+                   .calc(), -21);
 }
 
 #[test]
@@ -290,16 +283,12 @@ fn simple_char_test() {
     let x_char = token('x').or(token('y'));
     assert_eq!(x_char.parse("xxy").res.ok(), Some('x'));
 
-    // let x_char = token('x');
     let y_char = token('y');
 
     let xy = x_char.or(y_char.clone())
                    .and(y_char);
-    // println!("{:?}", xy.parse("yyx").other);
     assert_eq!(xy.parse("yyx").res.ok(), Some(('y','y')));
-    // panic!("(())");
+
     let x_char = token('x').greedy();
     assert_eq!(x_char.parse("xxy").res.ok(), Some("xx"));
-
-
 }

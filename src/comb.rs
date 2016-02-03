@@ -39,12 +39,20 @@ impl<R, T, P1, P2> Parse<T> for Or<P1, P2>
 
     fn parse(&self, tokens: T) -> ParseResult<Self::ParsedDataType, T> {
 
-        let first_res = self.first.parse(tokens);
-        if first_res.is_ok() {
-            return first_res;//.res.map_err(|e| e=ParseError::Expected(ParserType));
+        let (res, other) = self.first.parse(tokens).to_tuple();
+        if res.is_ok() {
+            return ParseResult::succ(res.unwrap(), other);
         }
-        // on fail previous parser should return orgiginal tokens
-        return self.second.parse(first_res.other);
+
+        // NOTE: previous parser should return orgiginal tokens
+        let (res, other) = self.second.parse(other).to_tuple();
+        if res.is_ok() {
+            return ParseResult::succ(res.unwrap(), other);
+        }
+
+        return ParseResult::fail(
+            ParseError::Expected(self.parser_type()),
+            other);
     }
 
     fn parser_type(&self) -> ParserType {
@@ -54,6 +62,7 @@ impl<R, T, P1, P2> Parse<T> for Or<P1, P2>
             )
     }
 }
+
 
 // ================================ Seq ================================
 pub struct And<P1, P2> {
@@ -70,21 +79,26 @@ impl<T, P1, P2> Parse<T> for And<P1, P2>
 
     fn parse(&self, tokens: T) -> ParseResult<Self::ParsedDataType, T> {
 
-        // TODO without clone
-        let ParseResult { res:first_res, other } = self.first.parse(tokens.clone());
+        // TODO without clone?
+        let ParseResult { res: first_res, other } = self.first.parse(tokens.clone());
 
         if !first_res.is_ok() {
-            return ParseResult::fail(ParseError::Expected(self.first.parser_type()),other);
+            return ParseResult::fail(
+                ParseError::Expected(self.first.parser_type()),
+                other);
         }
 
-        let ParseResult { res:second_res, other } = self.second.parse(other);
+        let ParseResult { res: second_res, other } = self.second.parse(other);
         if !second_res.is_ok() {
-            return ParseResult::fail(ParseError::Expected(self.second.parser_type()),tokens);
+            return ParseResult::fail(
+                ParseError::Expected(self.second.parser_type()),
+                tokens);
         }
 
         return ParseResult::succ((first_res.unwrap(), second_res.unwrap()), other);
     }
 }
+
 
 // ================================ Skip ================================
 pub struct Skip<P1, P2> {
@@ -104,6 +118,7 @@ impl<T, P1, P2> Parse<T> for Skip<P1, P2>
         return res.map(|(a, _)| a);
     }
 }
+
 
 // ================================ Repetition ================================
 pub struct Rep<P> {
@@ -140,7 +155,6 @@ pub struct Iter< P, I> {
     parser: P,
     pub input: I
 }
-
 
 impl<P, I> Iterator for Iter<P, I>
 where P:Parse<I> , I : Clone{
@@ -253,7 +267,6 @@ pub trait ParserComb<T>: Parse<T> where T : TokenStream, Self: Sized  {
             parser: self,
         }
     }
-
 }
 
 pub fn maybe<T, P>(parser: P) -> Mabye<P>
