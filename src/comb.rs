@@ -2,7 +2,8 @@
 // *
 // *
 
-use pars::{Parse, ParseResult, ParseError, ParserType, TokenStream};
+use pars::{Parse, ParseResult, ParseError, ParserType};
+use tokens::TokenStream;
 
 // ================================ MapedParser ================================
 #[derive(Clone)]
