@@ -17,8 +17,8 @@ pub trait Verify<T> {
 
 /// Pass tokens that equal given
 #[derive(Clone)]
-pub struct IsEqualOwn<T>(T);
-impl<'a, T: PartialEq> Verify<T> for IsEqualOwn<T> {
+pub struct EqualCheker<T>(T);
+impl<'a, T: PartialEq> Verify<T> for EqualCheker<T> {
     fn satisfies(&self, arg: &T) -> bool {
         *arg == self.0
     }
@@ -202,12 +202,12 @@ pub fn named_pred<T: TokenStream, F>(name: &str, f: F) -> Parser<Predicate<T::To
     }
 }
 
-pub fn token<T: TokenStream>(t: T::TokenType) -> Parser<IsEqualOwn<T::TokenType>, T>
+pub fn token<T: TokenStream>(t: T::TokenType) -> Parser<EqualCheker<T::TokenType>, T>
     where T::TokenType: ToString
 {
     Parser {
         name: Some(t.to_string()),
-        checker: IsEqualOwn(t),
+        checker: EqualCheker(t),
         _p: PhantomData,
     }
 }

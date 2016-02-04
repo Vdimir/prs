@@ -1,33 +1,81 @@
 #[cfg(test)]
 
 extern crate prs;
-use prs::*;
+
+pub use prs::comb::*;
+pub use prs::pars::*;
+pub use prs::lexer::*;
+
+#[test]
+fn char_stream_test() {
+    let mut stream = CharsStream::new("eng_фцч_123");
+    assert_eq!(stream.passed_chars_count(), 0);
+    assert_eq!(stream.peek_char(), Some('e'));
+    assert_eq!(stream.passed_chars_count(), 0);
+    assert_eq!(stream.next_char(), Some('n'));
+    assert_eq!(stream.passed_chars_count(), 1);
+    assert_eq!(stream.peek_char(), Some('n'));
+    assert_eq!(stream.peek_char(), Some('n'));
+    assert_eq!(stream.next_char(), Some('g'));
+    assert_eq!(stream.next_char(), Some('_'));
+    assert_eq!(stream.take_lexem(), ("eng"));
+    assert_eq!(stream.passed_chars_count(), 3);
+    assert_eq!(stream.peek_char(), Some('_'));
+    assert_eq!(stream.take_lexem(), (""));
+    assert_eq!(stream.peek_char(), Some('_'));
+    assert_eq!(stream.next_char(), Some('ф'));
+    assert_eq!(stream.take_lexem(), ("_"));
+    assert_eq!(stream.peek_char(), Some('ф'));
+    assert_eq!(stream.next_char(), Some('ц'));
+    assert_eq!(stream.next_char(), Some('ч'));
+    assert_eq!(stream.next_char(), Some('_'));
+    assert_eq!(stream.passed_chars_count(), 7);
+    stream.drop_lookahead();
+    assert_eq!(stream.passed_chars_count(), 4);
+    assert_eq!(stream.peek_char(), Some('ф'));
+    assert_eq!(stream.next_char(), Some('ц'));
+    assert_eq!(stream.next_char(), Some('ч'));
+    assert_eq!(stream.next_char(), Some('_'));
+    assert_eq!(stream.take_lexem(), ("фцч"));
+    assert_eq!(stream.next_char(), Some('1'));
+    assert_eq!(stream.take_lexem(), ("_"));
+    assert_eq!(stream.passed_chars_count(), 8);
+    assert_eq!(stream.peek_char(), Some('1'));
+    assert_eq!(stream.next_char(), Some('2'));
+    assert_eq!(stream.next_char(), Some('3'));
+    assert_eq!(stream.next_char(), None);
+    assert_eq!(stream.take_lexem(), ("123"));
+    assert_eq!(stream.eof(), true);
+    assert_eq!(stream.peek_char(), None);
+    assert_eq!(stream.next_char(), None);
+    assert_eq!(stream.next_char(), None);
+    assert_eq!(stream.passed_chars_count(), 11);
+}
+
 
 #[test]
 fn array_of_tokens_test() {
-    let tokens = ["655", "bar"];
+    let tokens: &[&str] = &["655", "bar"];
 
     let num_parser = named_pred("numb", |c: &&str| {
         c.chars().all(|c| c.is_numeric())
     });
 
-    // println!("{:?}", num_parser.parse(&tokens[..]).res);
-    assert_eq!(num_parser.parse(&tokens[..]).res,
+    assert_eq!(num_parser.parse(tokens).res,
               Ok("655"));
 
     let bar_parser = pred(|c: &&str| c == &"bar");
 
-    let tokens = &["bar", "655"];
-    assert_eq!(bar_parser.parse(&tokens[..]).res,
+    let tokens: &[&str] = &["bar", "655"];
+    assert_eq!(bar_parser.parse(tokens).res,
               Ok("bar"));
 
-    let tokens = &["bare"];
-    assert_eq!(bar_parser.parse(&tokens[..]).res.is_err(),
-              true);
+    assert_eq!(bar_parser.parse(&["bare"]).res.is_err(), true);
+    assert_eq!(bar_parser.parse(&["ba"]).res.is_err(), true);
 
 
-    let tokens = &["655", "bar"];
-    assert_eq!(num_parser.and(bar_parser).parse(&tokens[..]).res,
+    let tokens: &[&str] = &["655", "bar"];
+    assert_eq!(num_parser.and(bar_parser).parse(tokens).res,
               Ok(("655", "bar")));
     
 }
