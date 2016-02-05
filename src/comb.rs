@@ -40,13 +40,13 @@ impl<R, T, P1, P2> Parse<T> for Or<P1, P2>
 
     fn parse(&self, tokens: T) -> ParseResult<Self::ParsedDataType, T> {
 
-        let (res, other) = self.first.parse(tokens).to_tuple();
+        let (res, other) = self.first.parse(tokens).into_tuple();
         if res.is_ok() {
             return ParseResult::succ(res.unwrap(), other);
         }
 
         // NOTE: previous parser should return orgiginal tokens
-        let (res, other) = self.second.parse(other).to_tuple();
+        let (res, other) = self.second.parse(other).into_tuple();
         if res.is_ok() {
             return ParseResult::succ(res.unwrap(), other);
         }
@@ -143,7 +143,7 @@ impl<T: TokenStream, P> Parse<T> for Rep<P> where P: Parse<T>
             }
             results.push(res.unwrap());
         }
-        if results.len() > 0 {
+        if !results.is_empty() {
             return ParseResult::succ(results, other);
         }
         return ParseResult::fail(ParseError::Expected(self.parser.parser_type()),other);

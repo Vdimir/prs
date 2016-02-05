@@ -12,38 +12,38 @@ fn char_stream_test() {
     assert_eq!(stream.passed_chars_count(), 0);
     assert_eq!(stream.peek_char(), Some('e'));
     assert_eq!(stream.passed_chars_count(), 0);
-    assert_eq!(stream.next_char(), Some('n'));
+    assert_eq!(stream.next_char(), Some('e'));
     assert_eq!(stream.passed_chars_count(), 1);
     assert_eq!(stream.peek_char(), Some('n'));
     assert_eq!(stream.peek_char(), Some('n'));
+    assert_eq!(stream.next_char(), Some('n'));
     assert_eq!(stream.next_char(), Some('g'));
-    assert_eq!(stream.next_char(), Some('_'));
     assert_eq!(stream.take_lexem(), ("eng"));
     assert_eq!(stream.passed_chars_count(), 3);
     assert_eq!(stream.peek_char(), Some('_'));
     assert_eq!(stream.take_lexem(), (""));
     assert_eq!(stream.peek_char(), Some('_'));
-    assert_eq!(stream.next_char(), Some('ф'));
+    assert_eq!(stream.next_char(), Some('_'));
     assert_eq!(stream.take_lexem(), ("_"));
     assert_eq!(stream.peek_char(), Some('ф'));
+    assert_eq!(stream.next_char(), Some('ф'));
     assert_eq!(stream.next_char(), Some('ц'));
     assert_eq!(stream.next_char(), Some('ч'));
-    assert_eq!(stream.next_char(), Some('_'));
     assert_eq!(stream.passed_chars_count(), 7);
     stream.drop_lookahead();
     assert_eq!(stream.passed_chars_count(), 4);
     assert_eq!(stream.peek_char(), Some('ф'));
+    assert_eq!(stream.next_char(), Some('ф'));
     assert_eq!(stream.next_char(), Some('ц'));
     assert_eq!(stream.next_char(), Some('ч'));
-    assert_eq!(stream.next_char(), Some('_'));
     assert_eq!(stream.take_lexem(), ("фцч"));
-    assert_eq!(stream.next_char(), Some('1'));
+    assert_eq!(stream.next_char(), Some('_'));
     assert_eq!(stream.take_lexem(), ("_"));
     assert_eq!(stream.passed_chars_count(), 8);
     assert_eq!(stream.peek_char(), Some('1'));
+    assert_eq!(stream.next_char(), Some('1'));
     assert_eq!(stream.next_char(), Some('2'));
     assert_eq!(stream.next_char(), Some('3'));
-    assert_eq!(stream.next_char(), None);
     assert_eq!(stream.take_lexem(), ("123"));
     assert_eq!(stream.eof(), true);
     assert_eq!(stream.peek_char(), None);
@@ -84,13 +84,13 @@ fn array_of_tokens_test() {
 fn parse_iter() {
     let digit = pred(|c: &char| c.is_numeric());
 
-    let mut iter = iterate_parser_over_input(digit, "123.45");
+    let mut iter = iterate_parser_over_input(digit, CharsStream::new("123.45"));
 
     assert_eq!(iter.next(), Some('1'));
     assert_eq!(iter.next(), Some('2'));
     assert_eq!(iter.next(), Some('3'));
     assert_eq!(iter.next(), None);
-    assert_eq!(iter.input, ".45");
+    assert_eq!(iter.input.rest(), ".45");
 }
 
 #[test]
@@ -125,9 +125,9 @@ fn or_test() {
 
 
     for t in test_list {
-        let parsed = num_or_uppercase.parse(t.0);
+        let parsed = num_or_uppercase.parse(CharsStream::new(t.0));
         assert_eq!(parsed.res.ok(), t.1);
-        assert_eq!(parsed.other, t.2);
+        assert_eq!(parsed.other.rest(), t.2);
     }
 }
 
@@ -150,9 +150,10 @@ fn and_test() {
 
 
     for t in test_list {
-        let parsed = num_or_uppercase.parse(t.0);
+
+        let parsed = num_or_uppercase.parse(CharsStream::new(t.0));
         assert_eq!(parsed.res.ok(), t.1);
-        assert_eq!(parsed.other, t.2);
+        assert_eq!(parsed.other.rest(), t.2);
     }
 
 }
@@ -177,9 +178,10 @@ fn skip_test() {
                       ("123 ABcde", Some((123, "AB")), "cde")];
 
     for t in test_list {
-        let parsed = num_space_uppercase.parse(t.0);
+
+        let parsed = num_space_uppercase.parse(CharsStream::new(t.0));
         assert_eq!(parsed.res.ok(), t.1);
-        assert_eq!(parsed.other, t.2);
+        assert_eq!(parsed.other.rest(), t.2);
     }
 }
 
@@ -195,9 +197,10 @@ fn mabye_test() {
     let test_list = &[("123", Some(Some(123)), ""), ("A1", Some(None), "A1")];
 
     for t in test_list {
-        let parsed = mabye_num.parse(t.0);
+
+        let parsed = mabye_num.parse(CharsStream::new(t.0));
         assert_eq!(parsed.res.ok(), t.1);
-        assert_eq!(parsed.other, t.2);
+        assert_eq!(parsed.other.rest(), t.2);
     }
 }
 
@@ -220,9 +223,9 @@ fn rep_test() {
                       ];
 
     for t in test_list {
-        let parsed = list_of_nums_sum.parse(t.0);
+        let parsed = list_of_nums_sum.parse(CharsStream::new(t.0));
         assert_eq!(parsed.res.ok(), t.1);
-        assert_eq!(parsed.other, t.2);
+        assert_eq!(parsed.other.rest(), t.2);
     }
 }
 
@@ -271,7 +274,7 @@ fn expr_test() {
         return f;
     }
 
-    fn num<'a>(tokens: &'a str) -> ParseResult<Node, &'a str> {
+    fn num<'a>(tokens: CharsStream<'a>) -> ParseResult<Node, CharsStream<'a>> {
         (pred(|c: &char| c.is_numeric())
              .greedy()
              .skip(maybe(token(' ').greedy()))
@@ -279,7 +282,7 @@ fn expr_test() {
             .parse(tokens)
     }
 
-    fn parens_expr<'a>(tokens: &'a str) -> ParseResult<Node, &'a str> {
+    fn parens_expr<'a>(tokens: CharsStream<'a>) -> ParseResult<Node, CharsStream<'a>> {
         (token('(')
              .skip(maybe(token(' ').greedy()))
              .and(fn_parser(add_op).skip(token(')').skip(maybe(token(' ').greedy())))))
@@ -287,7 +290,7 @@ fn expr_test() {
             .parse(tokens)
     }
 
-    fn mul_op<'a>(tokens: &'a str) -> ParseResult<Node, &'a str> {
+    fn mul_op<'a>(tokens: CharsStream<'a>) -> ParseResult<Node, CharsStream<'a>> {
         let mul_symb = token('*').skip(maybe(token(' ').greedy()));
         let div_symb = token('/').skip(maybe(token(' ').greedy()));;
         let mul_div = mul_symb.or(div_symb);
@@ -298,9 +301,9 @@ fn expr_test() {
             .parse(tokens)
     }
 
-    assert_eq!(fn_parser(mul_op).parse("018 ").res.unwrap(), Node::Num(18));
+    assert_eq!(fn_parser(mul_op).parse(CharsStream::new("018 ")).res.unwrap(), Node::Num(18));
 
-    fn add_op<'a>(tokens: &'a str) -> ParseResult<Node, &'a str> {
+    fn add_op<'a>(tokens: CharsStream<'a>) -> ParseResult<Node, CharsStream<'a>> {
         let add_symb = token('+').skip(maybe(token(' ').greedy()));
         let sub_symb = token('-').skip(maybe(token(' ').greedy()));;
         let add_sub_symb = add_symb.or(sub_symb);
@@ -310,17 +313,17 @@ fn expr_test() {
             .parse(tokens)
     }
 
-    assert_eq!(fn_parser(mul_op).parse("18 /  9  * 3 *1").res.unwrap().calc(),
+    assert_eq!(fn_parser(mul_op).parse(CharsStream::new("18 /  9  * 3 *1")).res.unwrap().calc(),
                6);
 
-    assert_eq!(fn_parser(add_op).parse("1+5 /  9  * 3").res.unwrap(),
+    assert_eq!(fn_parser(add_op).parse(CharsStream::new("1+5 /  9  * 3")).res.unwrap(),
                Node::Add(Box::new((Node::Num(1),
                                    Node::Mul(Box::new((Node::Div(Box::new((Node::Num(5),
                                                                            Node::Num(9)))),
                                                        Node::Num(3))))))));
 
     assert_eq!(fn_parser(add_op)
-                   .parse("5+ 16 /  (9 + 5 * (2 - (7))) + (40) /10 *2-6*9/3*(7-5)+6/2")
+                   .parse(CharsStream::new("5+ 16 /  (9 + 5 * (2 - (7))) + (40) /10 *2-6*9/3*(7-5)+6/2"))
                    .res
                    .unwrap()
                    .calc(), -21);
@@ -329,14 +332,14 @@ fn expr_test() {
 #[test]
 fn simple_char_test() {
     let x_char = token('x').or(token('y'));
-    assert_eq!(x_char.parse("xxy").res.ok(), Some('x'));
+    assert_eq!(x_char.parse(CharsStream::new("xxy")).res.ok(), Some('x'));
 
-    let y_char = token('y');
+    // let y_char = token('y');
 
-    let xy = x_char.or(y_char.clone())
-                   .and(y_char);
-    assert_eq!(xy.parse("yyx").res.ok(), Some(('y','y')));
+    let xy = token('x').or(token('y'))
+                   .and(token('y'));
+    assert_eq!(xy.parse(CharsStream::new("yyx")).res.ok(), Some(('y','y')));
 
     let x_char = token('x').greedy();
-    assert_eq!(x_char.parse("xxy").res.ok(), Some("xx"));
+    assert_eq!(x_char.parse(CharsStream::new("xxy")).res.ok(), Some("xx"));
 }

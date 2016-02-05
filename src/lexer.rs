@@ -10,6 +10,7 @@ use pars::Verify;
 type BytePos = usize;
 type CharPos = usize;
 
+#[derive(Clone)]
 pub struct CharsStream<'a> {
     source: &'a str,
 
@@ -43,10 +44,10 @@ impl<'a> CharsStream<'a> {
     }
 
     pub fn next_char(&mut self) -> Option<char> {
+        let res = self.peek_char();
         self.lookahead_offset += self.peek_char()
-                                        .map(|c| c.len_utf8())
-                                        .unwrap_or(0);
-        self.peek_char()
+                                        .map_or(0, |c| c.len_utf8());
+        res
     }
 
     pub fn eof(&mut self) -> bool {
@@ -65,35 +66,57 @@ impl<'a> CharsStream<'a> {
     pub fn passed_chars_count(&self) -> usize {
         self.source[..self.current_offset()].chars().count()
     }
+
+    pub fn rest(&self) -> &str {
+        &self.source[self.current_offset()..]
+    }
 }   
 
-impl<'a> TokenStream for &'a str {
+impl<'a> TokenStream for CharsStream<'a> {
     type TokenType = char;
 
     fn look_ahead(&mut self) -> Option<Self::TokenType> {
-        self.chars().next()
+        self.peek_char()
     }
 
-    fn get(self) -> (Option<Self::TokenType>, Self) {
-        match self.chars().next() {
-            Some(c) => (Some(c), &self[c.len_utf8()..]),
-            None => (None, self),
-        }
+    fn get(mut self) -> (Option<Self::TokenType>, Self) {
+        (self.next_char(), self)
+        // match self.chars().next() {
+            // Some(c) => (Some(c), &self[c.len_utf8()..]),
+            // None => (None, self),
+        // }
     }
-}
-
-impl<'a> RangeTokenStream for &'a str {
-    type RangeType = &'a str;
-    fn get_while<C>(self, condition: &C) -> (Option<Self::RangeType>, Self)
+    fn get_if<C>(mut self, condition: &C) -> (Option<Self::TokenType>, Self)
         where C: Verify<Self::TokenType>
     {
-        let offset = self.chars()
-                         .take_while(|c| condition.satisfies(c))
-                         .fold(0, |len, c: char| len + c.len_utf8());
-        if offset == 0 {
-            return (None, self);
+        if let Some(c) = self.peek_char() {
+             if condition.satisfies(&c) {
+                return self.get();
+             }
         }
-        return (Some(&self[..offset]), &self[offset..]);
+        return (None, self);
     }
 }
+
+impl<'a> RangeTokenStream for CharsStream<'a> {
+    type RangeType = &'a str;
+    fn get_while<C>(mut self, condition: &C) -> (Option<Self::RangeType>, Self)
+        where C: Verify<Self::TokenType>
+    {
+        while let Some(c) = self.peek_char()
+        {
+             if condition.satisfies(&c) {
+                self.next_char();
+             } else {
+                break;
+             }
+        }
+        let res = self.take_lexem();
+        if res.is_empty() {
+            return (None, self);
+        }
+        return (Some(res), self);
+    }
+}
+
 

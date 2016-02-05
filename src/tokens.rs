@@ -14,15 +14,14 @@ pub trait TokenStream: Sized {
     fn look_ahead(&mut self) -> Option<Self::TokenType>;
     fn get(self) -> (Option<Self::TokenType>, Self);
 
-    fn get_if<'a, C>(mut self, condition: &C) -> (Option<Self::TokenType>, Self)
+    fn get_if<C>(mut self, condition: &C) -> (Option<Self::TokenType>, Self)
         where C: Verify<Self::TokenType>
     {
         let next_token = self.look_ahead();
 
-        if next_token.is_some() {
-            if condition.satisfies(&next_token.unwrap()) {
-                return self.get();
-            }
+        if next_token.is_some() && 
+                condition.satisfies(&next_token.unwrap()) {
+            return self.get();
         }
         (None, self)
     }

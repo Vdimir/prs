@@ -76,7 +76,7 @@ impl<R, S> ParseResult<R, S> {
         }
     }
 
-    pub fn to_tuple(self) -> (Result<R, ParseError>, S) {
+    pub fn into_tuple(self) -> (Result<R, ParseError>, S) {
         (self.res, self.other)
     }
 
@@ -196,7 +196,7 @@ pub fn named_pred<T: TokenStream, F>(name: &str, f: F) -> Parser<Predicate<T::To
     where F: Fn(&T::TokenType) -> bool
 {
     Parser {
-        name: Some(name.to_string()),
+        name: Some(name.to_owned()),
         checker: Predicate(f, PhantomData),
         _p: PhantomData,
     }
