@@ -2,8 +2,7 @@
 // *
 // *
 
-use pars::Verify;
-use std::iter::Peekable;
+use verify::Verify;
 
 // =============================================================================
 // ================================ TokenStream ================================
@@ -34,24 +33,6 @@ pub trait RangeTokenStream: TokenStream
         where C: Verify<Self::TokenType>;
 }
 
-
-// impl<T> TokenStream for Peekable<T>
-//     where T: Iterator,
-//           T::Item: Clone
-// {
-//     type TokenType = T::Item;
-// 
-//     fn look_ahead(&mut self) -> Option<Self::TokenType> {
-//         self.peek().map(|a| a.clone())
-//     }
-// 
-//     fn get(mut self) -> (Option<Self::TokenType>, Self) {
-//         (self.next(), self)
-//     }
-// }
-
-
-// use std::fmt::Debug;
 impl<'a, T> TokenStream for &'a [T]
     where T: Clone
 {

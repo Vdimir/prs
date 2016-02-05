@@ -2,10 +2,8 @@
 // * Tra &str into array of tokens
 // *
 
-use std::str::CharIndices;
-
-use tokens::{TokenStream, RangeTokenStream};
-use pars::Verify;
+use stream::{TokenStream, RangeTokenStream};
+use verify::Verify;
 
 type BytePos = usize;
 type CharPos = usize;
@@ -44,10 +42,9 @@ impl<'a> CharsStream<'a> {
     }
 
     pub fn next_char(&mut self) -> Option<char> {
-        let res = self.peek_char();
-        self.lookahead_offset += self.peek_char()
-                                        .map_or(0, |c| c.len_utf8());
-        res
+        let current_char = self.peek_char();
+        self.lookahead_offset += current_char.map_or(0, |c| c.len_utf8());
+        current_char
     }
 
     pub fn eof(&mut self) -> bool {
@@ -70,7 +67,10 @@ impl<'a> CharsStream<'a> {
     pub fn rest(&self) -> &str {
         &self.source[self.current_offset()..]
     }
-}   
+}
+
+
+// ---------------------------------------------------
 
 impl<'a> TokenStream for CharsStream<'a> {
     type TokenType = char;
@@ -81,11 +81,8 @@ impl<'a> TokenStream for CharsStream<'a> {
 
     fn get(mut self) -> (Option<Self::TokenType>, Self) {
         (self.next_char(), self)
-        // match self.chars().next() {
-            // Some(c) => (Some(c), &self[c.len_utf8()..]),
-            // None => (None, self),
-        // }
     }
+
     fn get_if<C>(mut self, condition: &C) -> (Option<Self::TokenType>, Self)
         where C: Verify<Self::TokenType>
     {

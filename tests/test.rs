@@ -4,6 +4,7 @@ extern crate prs;
 
 pub use prs::comb::*;
 pub use prs::pars::*;
+pub use prs::result::*;
 pub use prs::lexer::*;
 
 #[test]

@@ -1,9 +1,10 @@
 // *
-// *
+// * Module to combinate two or more parsers in different way 
 // *
 
-use pars::{Parse, ParseResult, ParseError, ParserType};
-use tokens::TokenStream;
+use pars::{Parse};
+use result::*;
+use stream::TokenStream;
 
 // ================================ MapedParser ================================
 #[derive(Clone)]
