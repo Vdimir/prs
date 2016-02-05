@@ -5,3 +5,4 @@ authors = ["VDimir <vcherckasov@yandex.ru>"]
 
 [dependencies]
 #regex = "0.1.48"
+#clippy = "*"

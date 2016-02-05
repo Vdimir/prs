@@ -4,12 +4,10 @@ while true; do
     if [ $1 = "test" ]
     then
         cargo test
-    else
-        cargo run
     fi
 
     if [ $? = 0 ]
-    then 
+    then
         tput bold;tput setaf 2;
         echo "****************"
         echo "****SUCCESS*****"
