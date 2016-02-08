@@ -56,7 +56,7 @@ impl<S, R, E, F> Parse for FnParser<F, S>
 
 
 // ====================================================================
-use result::{ExpectedButFound};
+use result::{ExpectedButFound, Expected};
 
 pub struct Token<S: TokenStream>(pub S::Token);
 
@@ -66,7 +66,7 @@ impl<S> Parse for Token<S>
 {
     type Input = S;
     type Output = S::Token;
-    type Error = ExpectedButFound<S::Token, S::Token>;
+    type Error = Expected<S::Token>;
 
     fn parse(&self, tokens: &mut S) -> Result<Self::Output, Self::Error> {
         let next_token = tokens.peek();
@@ -75,7 +75,7 @@ impl<S> Parse for Token<S>
         if satified {
             Ok(tokens.next().unwrap())
         } else {
-            Err(ExpectedButFound(Some(self.0), next_token))
+            Err(Expected(self.0))
         }
     }
 }

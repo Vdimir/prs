@@ -4,20 +4,40 @@ extern crate prs;
 use prs::pars::Token;
 use prs::pars::Parse;
 use prs::stream::char_stream::CharStream;
+use prs::stream::TokenStream;
 
 use prs::result::ExpectedButFound;
+use prs::result::Expected;
 
 #[test]
 fn simple_char_test() {
-    assert_eq!(Token('x').parse(&mut CharStream::new("xxxy")), Ok('x'));
-    assert_eq!(Token('y').parse(&mut CharStream::new("yxxy")), Ok('y'));    
-    assert_eq!(Token('z').parse(&mut CharStream::new("yxxy")), Err(ExpectedButFound(Some('z'),Some('y'))));
+
+    let mut input = CharStream::new("xyz");
+
+    assert_eq!(Token('x').parse(&mut input), Ok('x'));
+    assert_eq!(Token('y').parse(&mut input), Ok('y'));
+    assert_eq!(Token('w').parse(&mut input), Err(Expected('w')));
+    assert_eq!(Token('z').parse(&mut input), Ok('z'));
+
 }
 
+// use prs::comb::Or;
+use prs::comb::ParserComb;
 #[test]
-fn and_test() {
+fn or_test() {
 
+    let mut input = CharStream::new("xyz");
+    let x_or_y = Token('x').or(Token('y'));
+
+    assert_eq!(x_or_y.parse(&mut input), Ok('x'));
+    assert_eq!(x_or_y.parse(&mut input), Ok('y'));
+    assert_eq!(x_or_y.parse(&mut input), Err((Expected('x'), Expected('y'))));
+
+    let xyz = x_or_y.or(Token('z'));
+    assert_eq!(xyz.parse(&mut input), Ok('z'));
 }
+
+
     // let input = ["123", "AB"];
 
     // let num_parser = pred(|s: &&str| s.chars().any(|c| c.is_numeric()));

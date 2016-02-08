@@ -2,10 +2,10 @@
 // // * Module to combinate two or more parsers in different way 
 // // *
 
-// use pars::Parse;
+use pars::Parse;
 // use pars::PParse;
 // use result::*;
-// use stream::TStream;
+use stream::TokenStream;
 
 // // ================================ MapedParser ================================
 // #[derive(Clone)]
@@ -29,82 +29,31 @@
 // // ================================ OR ================================
 // use std::marker::PhantomData;
 
-// pub struct OrPh<P1, P2, T>{
-//     pub first: P1,
-//     pub second: P2,
-//     _phan: PhantomData<T>
-// }
 
-// impl<R, T, P1, P2> Parse<T> for OrPh<P1, P2, T>
-//     where P1: Parse<T, ParsedDataType = R>,
-//           P2: Parse<T, ParsedDataType = R>,
-//           T: TStream + Clone
-// {
-//     // type Input = T;
-//     type ParsedDataType = R;
+pub struct Or<P1, P2>(pub P1, pub P2);
 
-//     fn parse(&self, tokens: T) -> ParseResult<Self::ParsedDataType, T> {
+impl<R, T, P1, P2> Parse for Or<P1, P2>
+    where P1: Parse<Input=T, Output = R>,
+          P2: Parse<Input=T, Output = R>,
+          T: TokenStream
+{
+    type Input = T;
+    type Output = R;
+    type Error = (P1::Error, P2::Error);
 
-//         let (res, other) = self.first.parse(tokens).into_tuple();
-//         if res.is_ok() {
-//             return ParseResult::succ(res.unwrap(), other);
-//         }
+    fn parse(&self, tokens: &mut T) -> Result<Self::Output, Self::Error> {
 
-//         // NOTE: previous parser should return orgiginal tokens
-//         let (res, other) = self.second.parse(other).into_tuple();
-//         if res.is_ok() {
-//             return ParseResult::succ(res.unwrap(), other);
-//         }
-
-//         return ParseResult::fail(
-//             ParseError::Expected(
-//                 ParserType::Or(
-//                     Box::new(self.first.parser_type()),
-//                     Box::new(self.second.parser_type())
-//                 )
-//             ),
-//             other);
-//     }
-// }
-
-
-// #[derive(Clone)]
-// pub struct Or<P1, P2>{
-//     pub first: P1,
-//     pub second: P2,
-// }
-
-// impl<R, T, P1, P2> Parse<T> for Or<P1, P2>
-//     where P1: Parse<T, ParsedDataType = R>,
-//           P2: Parse<T, ParsedDataType = R>,
-//           T: TStream + Clone
-// {
-//     // type Input = T;
-//     type ParsedDataType = R;
-
-//     fn parse(&self, tokens: T) -> ParseResult<Self::ParsedDataType, T> {
-
-//         let (res, other) = self.first.parse(tokens).into_tuple();
-//         if res.is_ok() {
-//             return ParseResult::succ(res.unwrap(), other);
-//         }
-
-//         // NOTE: previous parser should return orgiginal tokens
-//         let (res, other) = self.second.parse(other).into_tuple();
-//         if res.is_ok() {
-//             return ParseResult::succ(res.unwrap(), other);
-//         }
-
-//         return ParseResult::fail(
-//             ParseError::Expected(
-//                 ParserType::Or(
-//                     Box::new(self.first.parser_type()),
-//                     Box::new(self.second.parser_type())
-//                 )
-//             ),
-//             other);
-//     }
-// }
+        match self.0.parse(tokens) {
+            Ok(v) => Ok(v),
+            Err(e0) => {
+                match self.1.parse(tokens) {
+                    Ok(v) => Ok(v),
+                    Err(e1) => Err((e0, e1)),
+                }
+            },
+        }
+    }
+}
 
 
 // // ================================ Seq ================================
@@ -275,17 +224,17 @@
 
 
 // // ================================ ParserComb ================================
-// pub trait ParserComb<T>: Parse<T>
-// where T : TStream,
-//     Self: Sized  {
-//     fn or<P>(self, parser: P) -> Or<Self, P>
-//         // where P: Parse<T, ParsedDataType = Self::ParsedDataType>
-//     {
-//         Or {
-//             first: self,
-//             second: parser,
-//         }
-//     }
+pub trait ParserComb: Parse
+where Self: Sized  {
+    fn or<P>(self, parser: P) -> Or<Self, P>
+    {
+        Or(self, parser,)
+    }
+}
+
+impl<P> ParserComb for P
+    where P: Parse
+{}
 
 
 //     fn orph<P>(self, parser: P) -> OrPh<Self, P, T>
@@ -358,8 +307,3 @@
 // // {
 // //     Rep { parser: parser}
 // // }
-
-// impl<T, P> ParserComb<T> for P
-//     where T: TStream,
-//           P: Parse<T>
-// {}
