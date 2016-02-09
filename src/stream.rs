@@ -10,17 +10,70 @@ pub trait TokenStream {
     fn next(&mut self) -> Option<Self::Token>;
 }
 
-/// Accumulates passed tokens from `TokenStream` and return ranges
-pub trait TStreamAccumulator: TokenStream {
-    type Range;
-    fn take_range(&mut self) -> Self::Range;
-    fn backtrack_range(&mut self);
+// /// Accumulates passed tokens from `TokenStream` and return ranges
+// pub trait TStreamAccumulator: TokenStream {
+//     type Range;
+//     fn take_range(&mut self) -> Self::Range;
+//     fn backtrack_range(&mut self);
+// }
+
+
+pub trait SaveStream: TokenStream {
+    type State;
+    fn save(&self) -> Self::State;
+    fn restore(&mut self, Self::State);
 }
 
 
 // ======================================= Implementations ========================================
 
 pub mod char_stream {
+    use super::{ TokenStream, SaveStream };
+
+    type BytePos = usize;
+
+    pub struct CharStream<'a> {
+        source: &'a str,
+        position: BytePos,
+    }
+
+    pub struct CharStreamState(BytePos);
+
+    impl<'a> SaveStream for CharStream<'a> {
+        type State = CharStreamState;
+        fn save(&self) -> CharStreamState {
+            CharStreamState(self.position)
+        }
+
+        fn restore(&mut self, save: CharStreamState) {
+            self.position = save.0
+        }
+    }
+
+    impl<'a> TokenStream for CharStream<'a> {
+        type Token = char;
+        fn peek(&mut self) -> Option<char> {
+            self.source[self.position..].chars().next()
+        }
+
+        fn next(&mut self) -> Option<char> {
+            let current_char = self.peek();
+            self.position += current_char.map_or(0, |c| c.len_utf8());
+            current_char
+        }
+    }
+
+    impl<'a> CharStream<'a> {
+        pub fn new(s: &'a str) -> Self {
+            CharStream {
+                source: s,
+                position: 0,
+            }
+        }
+    }
+}
+
+pub mod lexem_char_stream {
     
     use super::TokenStream;
     type BytePos = usize;
@@ -93,7 +146,7 @@ pub mod char_stream {
 #[cfg(test)]
 mod tests {
 
-    use super::char_stream::CharStream;
+    use super::lexem_char_stream::CharStream;
     use super::TokenStream;
     #[test]
     fn char_stream_test() {
@@ -141,74 +194,3 @@ mod tests {
         assert_eq!(stream.passed_chars_count(), 11);
     }
 }
-
-// =============================================== Old =============================================== 
-
-// pub trait TokenStream: Sized {
-//     type TokenType;
-
-//     fn look_ahead(&mut self) -> Option<Self::TokenType>;
-//     fn get(self) -> (Option<Self::TokenType>, Self);
-
-//     fn get_if<C>(mut self, condition: &C) -> (Option<Self::TokenType>, Self)
-//         where C: Verify<Self::TokenType>
-//     {
-//         let next_token = self.look_ahead();
-
-//         if next_token.is_some() && 
-//                 condition.satisfies(&next_token.unwrap()) {
-//             return self.get();
-//         }
-//         (None, self)
-//     }
-// }
-
-// pub trait RangeTokenStream: TokenStream
-// {
-//     type RangeType;
-//     fn get_while<C>(self, condition: &C) -> (Option<Self::RangeType>, Self)
-//         where C: Verify<Self::TokenType>;
-// }
-
-
-// impl<'a, T> TokenStream for &'a [T]
-//     where T: Clone
-// {
-//     type TokenType = T;
-
-//     fn look_ahead(&mut self) -> Option<Self::TokenType> {
-//         self.first().cloned()
-//     }
-
-//     fn get(self) -> (Option<Self::TokenType>, Self) {
-//         if self.len() == 0 {
-//             (None, self)
-//         } else {
-//             (Some(self[0].clone()), &self[1..])
-//         }
-//     }
-// }
-
-
-// #[derive(Clone, PartialEq)]
-// pub struct SliceStream<'a, T: 'a>(pub &'a [T]);
-
-// impl<'a, T> TokenStream for SliceStream<'a, T>
-//     where T: Clone
-// {
-//     type TokenType = T;
-
-//     fn look_ahead(&mut self) -> Option<Self::TokenType> {
-//         self.0.first().cloned()
-//     }
-
-//     fn get(mut self) -> (Option<Self::TokenType>, Self) {
-//         if self.0.len() == 0 {
-//             (None, self)
-//         } else {
-//             let res = self.0[0].clone();
-//             self.0 = &self.0[1..];
-//             (Some(res), self)
-//         }
-//     }
-// }

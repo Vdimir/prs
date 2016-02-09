@@ -65,7 +65,7 @@ impl<R, T, P1, P2> Parse for Or<P1, P2>
     }
 }
 
-// ----------------------------------------- Many ------------------------------------------
+// -------------------------------------------- Many ----------------------------------------------
 use std::iter::FromIterator;
 use std::marker::PhantomData;
 
@@ -119,11 +119,50 @@ where P: Parse<Input=I>,
 }
 
 
+// ----------------------------------------- Maybe ------------------------------------------
+pub struct Maybe<P>(P);
+
+
+impl<P> Parse for Maybe<P>
+    where P: Parse, 
+{
+    type Input = P::Input;
+    type Output = Option<P::Output>;
+    type Error = P::Error;
+    fn parse(&self, tokens: &mut Self::Input) -> Result<Self::Output, Self::Error> {
+        Ok(self.0.parse(tokens).ok())
+    }
+}
+
+use stream::SaveStream;
+
+impl<P1, P2, I, E> Parse for (P1, P2)
+    where I: SaveStream,
+          P1: Parse<Input=I, Error=E>,
+          P2: Parse<Input=I, Error=E>,
+{
+    type Input = I;
+    type Output = (P1::Output, P2::Output);
+    type Error = E;
+    fn parse(&self, tokens: &mut Self::Input) -> Result<Self::Output, Self::Error> {
+        let &(ref p1, ref p2) = self;
+        
+        let saved_tokens = tokens.save();
+
+        let first = try!(p1.parse(tokens));
+
+        match p2.parse(tokens) {
+            Ok(second) => Ok((first, second)),
+            Err(e) => { tokens.restore(saved_tokens); Err(e) }
+        }
+    }
+}
+
+
 // ----------------------------------------- Constructor ------------------------------------------
 pub trait ParserComb: Parse
 where Self: Sized  {
-    fn or<P>(self, parser: P) -> Or<Self, P>
-    {
+    fn or<P>(self, parser: P) -> Or<Self, P> {
         Or(self, parser)
     }
 
@@ -134,8 +173,12 @@ where Self: Sized  {
         Then(self, f)
     }
 
-    fn many<R>(self) -> Many<Self, R>{
+    fn many<R>(self) -> Many<Self, R> {
         Many(self, PhantomData)
+    }
+
+    fn maybe(self) -> Maybe<Self> {
+        Maybe(self)
     }
 }
 
@@ -143,95 +186,12 @@ pub fn many<P, R>(p: P) -> Many<P, R>{
     Many(p, PhantomData)
 }
 
+pub fn maybe<P>(p: P) -> Maybe<P>{
+    Maybe(p)
+}
+
 
 
 impl<P> ParserComb for P
     where P: Parse
 {}
-
-// // ================================ Seq ================================
-// pub struct And<P1, P2> {
-//     first: P1,
-//     second: P2,
-// }
-
-// impl<T, P1, P2> Parse<T> for And<P1, P2>
-//     where P1: Parse<T>,
-//           P2: Parse<T>,
-//           T: TStream + Clone
-// {
-//     type ParsedDataType = (P1::ParsedDataType, P2::ParsedDataType);
-
-//     fn parse(&self, tokens: T) -> ParseResult<Self::ParsedDataType, T> {
-
-//         // TODO without clone?
-//         let ParseResult { res: first_res, other } = self.first.parse(tokens.clone());
-
-//         if !first_res.is_ok() {
-//             return ParseResult::fail(
-//                 ParseError::Unknown,
-//                 // ParseError::Expected(self.first.parser_type()),
-//                 other);
-//         }
-
-//         let ParseResult { res: second_res, other } = self.second.parse(other);
-//         if !second_res.is_ok() {
-//             return ParseResult::fail(
-//                 ParseError::Unknown,
-//                 // ParseError::Expected(self.second.parser_type()),
-//                 tokens);
-//         }
-
-//         return ParseResult::succ((first_res.unwrap(), second_res.unwrap()), other);
-//     }
-// }
-
-
-// // ================================ Mabye ================================
-// pub struct Mabye<P> {
-//     parser: P,
-// }
-
-// impl<T: TStream, P> Parse<T> for Mabye<P> where P: Parse<T>
-// {
-//     type ParsedDataType = Option<P::ParsedDataType>;
-
-//     fn parse(&self, tokens: T) -> ParseResult<Self::ParsedDataType, T> {
-//         let ParseResult {res, other} = self.parser.parse(tokens);
-
-//         return ParseResult::succ(res.ok(), other);
-//     }
-// }
-
-
-
-
-//     fn orph<P>(self, parser: P) -> OrPh<Self, P, T>
-//         // where P: Parse<T, ParsedDataType = Self::ParsedDataType>
-//     {
-//         OrPh {
-//             first: self,
-//             second: parser,
-//             _phan: PhantomData
-//         }
-//     }
-
-//     fn and<P>(self, parser: P) -> And<Self, P>
-//         where P: Parse<T>
-//     {
-//         And {
-//             first: self,
-//             second: parser,
-//         }
-//     }
-
-//     // fn skip<P>(self, parser: P) -> Skip<Self, P>
-//     //     where P: Parse<T>
-//     // {
-//     //     Skip {
-//     //         actual: self,
-//     //         skiped: parser,
-//     //     }
-//     // }
-
-// }

@@ -7,7 +7,6 @@ use stream::TokenStream;
 
 // ========================================= Parse Trait ==========================================
 
-
 pub trait Parse {
     type Input: TokenStream;
     type Output;
@@ -16,8 +15,6 @@ pub trait Parse {
     fn parse(&self, &mut Self::Input) -> Result<Self::Output, Self::Error>;
 }
 
-
-// TODO CHECK THIS
 impl<'a, I, O, P, E> Parse for &'a P
     where I: TokenStream,
           P: Parse<Input=I, Output = O, Error=E>
@@ -30,32 +27,8 @@ impl<'a, I, O, P, E> Parse for &'a P
     }
 }
 
+
 // ==================================== Parse Implementations =====================================
-
-// ------------------------------------------- FnParser -------------------------------------------
-pub struct FnParser<F, I>(F, PhantomData<I>);
-
-impl<S, R, E, F> Parse for FnParser<F, S>
-    where S: TokenStream,
-          F: Fn(&mut S) -> Result<R, E>
-{
-    type Input = S;
-    type Output = R;
-    type Error = E;
-
-    fn parse(&self, tokens: &mut S) -> Result<R, E> {
-        self.0(tokens)
-    }
-}
-
-// pub fn fn_parser<I, R, E, F>(f: F) -> FnParser<F>
-//     where I: TokenStream,
-//           F: Fn(I) -> Result<R, E>
-// {
-//     FnParser(f, PhantomData)
-// }
-
-
 
 // -------------------------------------------- Token ---------------------------------------------
 use result::Expected;
@@ -94,18 +67,6 @@ where S: TokenStream,
     _phantom: PhantomData<S>
 }
 
-pub fn predicate<F, T, S>(name: S, f: F) -> Predicate<F, T>
-where T: TokenStream,
-      F: Fn(&T::Token) -> bool,
-      S: Into<String>
-{
-    Predicate {
-        name: name.into(),
-        predicate: f,
-        _phantom: PhantomData
-    }
-}
-
 impl<S, F> Parse for Predicate<F, S>
     where S: TokenStream,
         F: Fn(&S::Token) -> bool
@@ -126,3 +87,37 @@ impl<S, F> Parse for Predicate<F, S>
     }
 }
 
+pub fn predicate<F, T, S>(name: S, f: F) -> Predicate<F, T>
+where T: TokenStream,
+      F: Fn(&T::Token) -> bool,
+      S: Into<String>
+{
+    Predicate {
+        name: name.into(),
+        predicate: f,
+        _phantom: PhantomData
+    }
+}
+
+// ------------------------------------------- FnParser -------------------------------------------
+pub struct FnParser<F, I>(F, PhantomData<I>);
+
+impl<S, R, E, F> Parse for FnParser<F, S>
+    where S: TokenStream,
+          F: Fn(&mut S) -> Result<R, E>
+{
+    type Input = S;
+    type Output = R;
+    type Error = E;
+
+    fn parse(&self, tokens: &mut S) -> Result<R, E> {
+        self.0(tokens)
+    }
+}
+
+// pub fn fn_parser<I, R, E, F>(f: F) -> FnParser<F>
+//     where I: TokenStream,
+//           F: Fn(I) -> Result<R, E>
+// {
+//     FnParser(f, PhantomData)
+// }

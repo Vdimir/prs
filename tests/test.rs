@@ -75,7 +75,7 @@ fn many_test() {
 }
 
 #[test]
-fn many_uni_test() {
+fn many_comb_test() {
     let dig = predicate("digit",|c: &char| c.is_digit(10))
                 .many()
                 .then(|s: String| s.parse::<u32>().unwrap());
@@ -96,125 +96,50 @@ fn many_uni_test() {
 
 
 
+use prs::comb::maybe;
+
+#[test]
+fn mabye_test() {
+    let maybe_x = maybe(Token('x'));
+
+    let mut input = CharStream::new("xy");
+    assert_eq!(maybe_x.parse(&mut input), Ok(Some('x')));
+    assert_eq!(maybe_x.parse(&mut input), Ok(None));
+    assert_eq!(maybe_x.parse(&mut input), Ok(None));
+    assert_eq!(input.peek(), Some('y'));
+}
+
+#[test]
+fn mabye_many_test() {
+    let whitespace = maybe(Token(' ').many::<String>());
+
+    let mut input = CharStream::new("     xy");
+    assert!(whitespace.parse(&mut input).is_ok());
+    assert_eq!(input.peek(), Some('x'));
+
+    let mut input = CharStream::new("xy");
+    assert!(whitespace.parse(&mut input).is_ok());
+    assert_eq!(input.peek(), Some('x'));
+}
+
+#[test]
+fn and_test() {
+    let x_and_y = (Token('x'), Token('y'));
+
+    assert_eq!(x_and_y.parse(&mut CharStream::new("xy")), Ok(('x', 'y')));
+
+    let input = &mut CharStream::new("zy");
+    assert_eq!(x_and_y.parse(input), Err(Expected('x')));
+    assert_eq!(input.peek(), Some('z'));
+
+    let input = &mut CharStream::new("xz");
+    assert_eq!(x_and_y.parse(input), Err(Expected('y')));
+    assert_eq!(input.peek(), Some('x'));
+}
+
+
+
 // ******************************************************************************
-
-
-// #[test]
-// fn mabye_test() {
-//     let num_parser = pred(|c: &char| c.is_numeric())
-//                          .greedy()
-//                          .map(|s: &str| s.parse::<i32>().unwrap());
-
-//     let mabye_num = maybe(num_parser);
-
-//     let test_list = &[("123", Some(Some(123)), ""), ("A1", Some(None), "A1")];
-
-//     for t in test_list {
-
-//         let parsed = mabye_num.parse(CharsStream::new(t.0));
-//         assert_eq!(parsed.res.ok(), t.1);
-//         assert_eq!(parsed.other.rest(), t.2);
-//     }
-// }
-
-
-// #[test]
-// fn array_of_tokens_test() {
-//     let tokens: &[&str] = &["655", "bar"];
-
-//     let num_parser = named_pred("numb", |c: &&str| {
-//         c.chars().all(|c| c.is_numeric())
-//     });
-
-//     assert_eq!(num_parser.parse(tokens).res,
-//               Ok("655"));
-
-//     let bar_parser = pred(|c: &&str| c == &"bar");
-
-//     let tokens: &[&str] = &["bar", "655"];
-//     assert_eq!(bar_parser.parse(tokens).res,
-//               Ok("bar"));
-
-//     assert_eq!(bar_parser.parse(&["bare"]).res.is_err(), true);
-//     assert_eq!(bar_parser.parse(&["ba"]).res.is_err(), true);
-
-
-//     // let tokens: &[&str] = &["655", "bar"];
-//     // assert_eq!(num_parser.and(bar_parser).parse(tokens).res,
-//     //           Ok(("655", "bar")));
-    
-// }
-
-// #[test]
-// fn parse_iter() {
-//     let digit = pred(|c: &char| c.is_numeric());
-
-//     let mut iter = iterate_parser_over_input(digit, CharsStream::new("123.45"));
-
-//     assert_eq!(iter.next(), Some('1'));
-//     assert_eq!(iter.next(), Some('2'));
-//     assert_eq!(iter.next(), Some('3'));
-//     assert_eq!(iter.next(), None);
-//     assert_eq!(iter.input.rest(), ".45");
-// }
-
-
-
-// 
-
-// #[test]
-// fn skip_test() {
-//     let num_parser = pred(|c: &char| c.is_numeric())
-//                          .greedy()
-//                          .map(|s: &str| s.parse::<i32>().unwrap());
-
-//     let uppercase_parser = pred(|c: &char| c.is_uppercase()).greedy();
-
-//     let space_parser = pred(|c: &char| c == &' ').greedy();
-
-//     let num_space_uppercase = num_parser.skip(space_parser)
-//                                         .and(uppercase_parser);
-
-//     let test_list = &[ 
-//                       ("5", None, "5"),
-//                       ("123AB", None, "123AB"),
-//                       ("123 AB", Some((123, "AB")), ""),
-//                       ("123 ABcde", Some((123, "AB")), "cde")];
-
-//     for t in test_list {
-
-//         let parsed = num_space_uppercase.parse(CharsStream::new(t.0));
-//         assert_eq!(parsed.res.ok(), t.1);
-//         assert_eq!(parsed.other.rest(), t.2);
-//     }
-// }
-
-
-
-// #[test]
-// fn rep_test() {
-//     let num_parser = pred(|c: &char| c.is_numeric())
-//                          .greedy()
-//                          .map(|s: &str| s.parse::<i32>().unwrap());
-
-//     let space_parser = pred(|c: &char| c == &' ').greedy().map(|_| ());
-
-//     let list_of_nums_sum = rep(num_parser.skip(maybe(space_parser)))
-//                                .map(|x: Vec<_>| x.iter().fold(0, |acc, &x| acc + x));
-
-//     let test_list = &[
-//                       (" 1Aa", None, " 1Aa"),
-//                       ("5", Some(5), ""),
-//                       ("5 10 15 30 1 ", Some(61), ""),
-//                       ("500 50  bar", Some(550), "bar")
-//                       ];
-
-//     for t in test_list {
-//         let parsed = list_of_nums_sum.parse(CharsStream::new(t.0));
-//         assert_eq!(parsed.res.ok(), t.1);
-//         assert_eq!(parsed.other.rest(), t.2);
-//     }
-// }
 
 // #[test]
 // fn expr_test() {
