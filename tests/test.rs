@@ -1,28 +1,40 @@
 #[cfg(test)]
 
 extern crate prs;
-use prs::pars::Token;
+
 use prs::pars::Parse;
+use prs::pars::Token;
 use prs::stream::char_stream::CharStream;
 use prs::stream::TokenStream;
 
-use prs::result::ExpectedButFound;
 use prs::result::Expected;
+use prs::comb::ParserComb;
 
 #[test]
-fn simple_char_test() {
-
+fn token_test() {
     let mut input = CharStream::new("xyz");
 
     assert_eq!(Token('x').parse(&mut input), Ok('x'));
     assert_eq!(Token('y').parse(&mut input), Ok('y'));
     assert_eq!(Token('w').parse(&mut input), Err(Expected('w')));
     assert_eq!(Token('z').parse(&mut input), Ok('z'));
-
 }
 
-// use prs::comb::Or;
-use prs::comb::ParserComb;
+use prs::pars::predicate;
+#[test]
+fn pred_test() {
+    let mut input = CharStream::new("12a");
+
+    // let dig = predicate::<_,CharStream,_>("digit",|c| c.is_digit(10));
+    let dig = predicate("digit",|c: &char| c.is_digit(10));
+
+    assert_eq!(dig.parse(&mut input), Ok('1'));
+    assert_eq!(dig.parse(&mut input), Ok('2'));
+    assert_eq!(dig.parse(&mut input), Err(Expected("digit".to_owned())));
+    assert_eq!(input.peek(), Some('a'));
+}
+
+
 #[test]
 fn or_test() {
 
@@ -37,36 +49,74 @@ fn or_test() {
     assert_eq!(xyz.parse(&mut input), Ok('z'));
 }
 
+#[test]
+fn then_test() {
+    let dig_square = predicate("digit",|c: &char| c.is_digit(10))
+            .then(|c: char| c.to_digit(10).map(|d| d * d).unwrap());
 
-    // let input = ["123", "AB"];
-
-    // let num_parser = pred(|s: &&str| s.chars().any(|c| c.is_numeric()));
-    // let uppercase_parser = pred(|s: &&str| s.chars().any(|c| c.is_uppercase()));
-    // let num_or_uppercase = num_parser.and(uppercase_parser);
-    // let p = Token("123");
-    // let ff = SliceStream(&input);
-
-    // let parsed = p.parse(ff);
-    // assert_eq!(parsed.res.ok(), Some("123"));
-    // assert_eq!(parsed.res.ok(), Some(("123", "AB")));
-    // assert_eq!(parsed.other, &[""][1..]);
-
-    // let test_list = &[
-    //                   (&["123","AB"], Some(("123", "AB")), &[""]),
-    //                   (&["5"], None, &["5"]),
-    //                   (&["A"], None, &["A"]),
-    //                   (&["500", "FF" ,"bar"], Some(("500", "FF")), &["bar"]),
-    //                   ];
+    let input = &mut CharStream::new("123a");
+    assert_eq!(dig_square.parse(input), Ok(1));
+    assert_eq!(dig_square.parse(input), Ok(4));
+    assert_eq!(dig_square.parse(input), Ok(9));
+    assert_eq!(dig_square.parse(input), Err(Expected("digit".to_owned())));
+}
 
 
-    // for t in test_list {
+use prs::comb::many;
 
-    //     let parsed = num_or_uppercase.parse(t.0);
-    //     assert_eq!(parsed.res.ok(), t.1);
-    //     assert_eq!(parsed.other, t.2);
-    // }
+#[test]
+fn many_test() {
+    let dig = many(predicate("digit",|c: &char| c.is_digit(10)));
 
+    let input = &mut CharStream::new("123a");
+    assert_eq!(dig.parse(input), Ok(vec!['1','2','3']));
+    assert_eq!(dig.parse(input), Err(Expected("digit".to_owned())));
+    assert_eq!(input.peek(), Some('a'));
+}
+
+#[test]
+fn many_uni_test() {
+    let dig = predicate("digit",|c: &char| c.is_digit(10))
+                .many()
+                .then(|s: String| s.parse::<u32>().unwrap());
+                
+    assert_eq!(dig.parse(&mut CharStream::new("123")), Ok(123));
+}
+
+// use prs::comb::OnError;
+// #[test]
+// fn onerr_test() {
+
+//     let mut input = CharStream::new("xyz");
+
+//     let x_pars = OnError(Token('x'), Expected("token `x`".to_owned()));
+//     assert_eq!(x_pars.parse(&mut input), Ok('x'));
+//     assert_eq!(x_pars.parse(&mut input), Err(Expected("token `x`".to_owned())));
 // }
+
+
+
+// ******************************************************************************
+
+
+// #[test]
+// fn mabye_test() {
+//     let num_parser = pred(|c: &char| c.is_numeric())
+//                          .greedy()
+//                          .map(|s: &str| s.parse::<i32>().unwrap());
+
+//     let mabye_num = maybe(num_parser);
+
+//     let test_list = &[("123", Some(Some(123)), ""), ("A1", Some(None), "A1")];
+
+//     for t in test_list {
+
+//         let parsed = mabye_num.parse(CharsStream::new(t.0));
+//         assert_eq!(parsed.res.ok(), t.1);
+//         assert_eq!(parsed.other.rest(), t.2);
+//     }
+// }
+
 
 // #[test]
 // fn array_of_tokens_test() {
@@ -108,78 +158,9 @@ fn or_test() {
 //     assert_eq!(iter.input.rest(), ".45");
 // }
 
-// #[test]
-// fn or_test() {
-//     #[derive(Debug, PartialEq)]
-//     enum NumOrString<'a> {
-//         Num(i32),
-//         Str(&'a str),
-//         Space,
-//     }
-
-//     let num_parser = pred(|c: &char| c.is_numeric())
-//                          .greedy()
-//                          .map(|s: &str| NumOrString::Num(s.parse::<i32>().unwrap()));
-
-//     let uppercase_parser = pred(|c: &char| c.is_uppercase()).greedy().map(|s| NumOrString::Str(s));
-
-//     let space_parser = pred(|c: &char| c == &' ').greedy().map(|_| NumOrString::Space);
-
-//     let num_or_uppercase = num_parser.or(space_parser)
-//                                      .or(uppercase_parser);
-
-
-//     let test_list = &[
-//                       ("123", Some(NumOrString::Num(123)), ""),
-//                       ("123AB", Some(NumOrString::Num(123)), "AB"),
-//                       ("FOO", Some(NumOrString::Str("FOO")), ""),
-//                       ("AB123", Some(NumOrString::Str("AB")), "123"),
-//                       (" 0", Some(NumOrString::Space), "0"),
-//                       ("aA", None, "aA"),
-//                       ];
-
-
-//     for t in test_list {
-//         let parsed = num_or_uppercase.parse(CharsStream::new(t.0));
-//         assert_eq!(parsed.res.ok(), t.1);
-//         assert_eq!(parsed.other.rest(), t.2);
-//     }
-// }
 
 
 // 
-// #[test]
-// fn and_test() {
-
-    // let input = ["123", "AB"];
-
-    // let num_parser = pred(|s: &&str| s.chars().any(|c| c.is_numeric()));
-    // let uppercase_parser = pred(|s: &&str| s.chars().any(|c| c.is_uppercase()));
-    // let num_or_uppercase = num_parser.and(uppercase_parser);
-    // let p = Token("123");
-    // let ff = SliceStream(&input);
-
-    // let parsed = p.parse(ff);
-    // assert_eq!(parsed.res.ok(), Some("123"));
-    // assert_eq!(parsed.res.ok(), Some(("123", "AB")));
-    // assert_eq!(parsed.other, &[""][1..]);
-
-    // let test_list = &[
-    //                   (&["123","AB"], Some(("123", "AB")), &[""]),
-    //                   (&["5"], None, &["5"]),
-    //                   (&["A"], None, &["A"]),
-    //                   (&["500", "FF" ,"bar"], Some(("500", "FF")), &["bar"]),
-    //                   ];
-
-
-    // for t in test_list {
-
-    //     let parsed = num_or_uppercase.parse(t.0);
-    //     assert_eq!(parsed.res.ok(), t.1);
-    //     assert_eq!(parsed.other, t.2);
-    // }
-
-// }
 
 // #[test]
 // fn skip_test() {
@@ -209,23 +190,6 @@ fn or_test() {
 // }
 
 
-// #[test]
-// fn mabye_test() {
-//     let num_parser = pred(|c: &char| c.is_numeric())
-//                          .greedy()
-//                          .map(|s: &str| s.parse::<i32>().unwrap());
-
-//     let mabye_num = maybe(num_parser);
-
-//     let test_list = &[("123", Some(Some(123)), ""), ("A1", Some(None), "A1")];
-
-//     for t in test_list {
-
-//         let parsed = mabye_num.parse(CharsStream::new(t.0));
-//         assert_eq!(parsed.res.ok(), t.1);
-//         assert_eq!(parsed.other.rest(), t.2);
-//     }
-// }
 
 // #[test]
 // fn rep_test() {

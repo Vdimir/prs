@@ -17,16 +17,18 @@ pub trait Parse {
 }
 
 
-// // TODO CHECK THIS
-// impl<'a, I, O, P> Parse<I> for &'a P
-//     where I: TStream,
-//           P: Parse<I, ResultType = O>
-// {
-//     type ResultType = O;
-//     fn parse(&self, tokens: I) -> ParseResult<Self::ResultType, I> {
-//         (*self).parse(tokens)
-//     }
-// }
+// TODO CHECK THIS
+impl<'a, I, O, P, E> Parse for &'a P
+    where I: TokenStream,
+          P: Parse<Input=I, Output = O, Error=E>
+{
+    type Input = I;
+    type Output = O;
+    type Error = E;
+    fn parse(&self, tokens: &mut I) -> Result<O, E> {
+        (*self).parse(tokens)
+    }
+}
 
 // ==================================== Parse Implementations =====================================
 
@@ -55,8 +57,8 @@ impl<S, R, E, F> Parse for FnParser<F, S>
 
 
 
-// ====================================================================
-use result::{ExpectedButFound, Expected};
+// -------------------------------------------- Token ---------------------------------------------
+use result::Expected;
 
 pub struct Token<S: TokenStream>(pub S::Token);
 
@@ -80,117 +82,47 @@ impl<S> Parse for Token<S>
     }
 }
 
+// ------------------------------------------ Predicate -------------------------------------------
 
+// Use `name` or provide only `on_error()` for parsers and show none by default?
+#[derive(Clone)]
+pub struct Predicate<F, S>
+where S: TokenStream,
+     F: Fn(&S::Token) -> bool {
+    name: String,
+    predicate: F,
+    _phantom: PhantomData<S>
+}
 
+pub fn predicate<F, T, S>(name: S, f: F) -> Predicate<F, T>
+where T: TokenStream,
+      F: Fn(&T::Token) -> bool,
+      S: Into<String>
+{
+    Predicate {
+        name: name.into(),
+        predicate: f,
+        _phantom: PhantomData
+    }
+}
 
-// impl<T> PParse for Token<T>
-//     where T: TStream,
-//           T::TokenType: PartialEq
-// {
-//     type Input = T;
-//     type ResultType = T::TokenType;
-//     fn parse(&self, mut tokens: T) -> ParseResult<Self::ResultType, T> {
-//         let satified = tokens.peek()
-//                              .map_or(false, |t| t == self.0);
-//         if satified {
-//             finish_ok!(tokens.next().unwrap(), tokens);
-//         }
-//         finish_err!(ParseError::expected("token"), tokens);
-//     }
-// }
+impl<S, F> Parse for Predicate<F, S>
+    where S: TokenStream,
+        F: Fn(&S::Token) -> bool
+{
+    type Input = S;
+    type Output = S::Token;
+    type Error = Expected<String>;
 
-// ====================================================================
-// vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+    fn parse(&self, tokens: &mut S) -> Result<Self::Output, Self::Error> {
+        let next_token = tokens.peek();
+        let satified = next_token.map_or(false, |t| (self.predicate)(&t));
 
-// /// Parses wraps any type implements `Verify` for parse satisfied tokens
-// #[derive(Clone)]
-// pub struct Parser<C, T> {
-//     name: Option<String>,
-//     checker: C,
-//     _p: PhantomData<T>,
-// }
-
-// impl<C,T> Parser<C,T> {
-//     fn parser_type(&self) -> ParserType {
-//         match self.name {
-//             Some(ref name) => ParserType::Named(name.clone()),
-//             None => ParserType::Named("NA".to_owned()),
-//         }
-//     }
-// }
-
-// impl<T, C> Parse<T> for Parser<C, T>
-//     where T: TStream,
-//           C: Verify<T::TokenType>
-// {
-//     type ResultType = T::TokenType;
-//     fn parse(&self, tokens: T) -> ParseResult<Self::ResultType, T> {
-//         let (res_opt, other) = tokens.get_if(&self.checker);
-//         if res_opt.is_some() {
-//             let res = res_opt.unwrap();
-//             finish_ok!(res, other);
-//         }
-//         finish_err!(Expected(self.parser_type()), other);
-//     }
-// }
-
-// impl<C, T: TStream> Parser<C, T> {
-//     pub fn greedy(self) -> GrParser<C, T> {
-//         GrParser {
-//             checker: self.checker,
-//             _p: PhantomData,
-//         }
-//     }
-// }
-
-// #[derive(Clone)]
-// pub struct GrParser<C, T: TStream> {
-//     checker: C,
-//     _p: PhantomData<T>,
-// }
-
-// impl<T, C> Parse<T> for GrParser<C, T>
-//     where T: RangeTStream,
-//           C: Verify<T::TokenType>
-// {
-//     type ResultType = T::RangeType;
-//     fn parse(&self, tokens: T) -> ParseResult<Self::ResultType, T> {
-//         let (res, other) = tokens.get_while(&self.checker);
-//         if let Some(parsed) = res {
-//             finish_ok!(parsed, other);
-//         }
-//         finish_err!(ParseError::Unknown, other);
-//     }
-// }
-
-// // ====================================== FactoryMethods ======================================
-// pub fn pred<T: TStream, F>(f: F) -> Parser<Predicate<T::TokenType, F>, T>
-//     where F: Fn(&T::TokenType) -> bool
-// {
-//     Parser {
-//         name: None,
-//         checker: Predicate(f, PhantomData),
-//         _p: PhantomData,
-//     }
-// }
-
-// pub fn named_pred<T: TStream, F>(name: &str, f: F) -> Parser<Predicate<T::TokenType, F>, T>
-//     where F: Fn(&T::TokenType) -> bool
-// {
-//     Parser {
-//         name: Some(name.to_owned()),
-//         checker: Predicate(f, PhantomData),
-//         _p: PhantomData,
-//     }
-// }
-
-// pub fn token<T: TStream>(t: T::TokenType) -> Parser<EqualCheker<T::TokenType>, T>
-//     where T::TokenType: ToString
-// {
-//     Parser {
-//         name: Some(t.to_string()),
-//         checker: EqualCheker(t),
-//         _p: PhantomData,
-//     }
-// }
+        if satified {
+            Ok(tokens.next().unwrap())
+        } else {
+            Err(Expected(self.name.clone()))
+        }
+    }
+}
 

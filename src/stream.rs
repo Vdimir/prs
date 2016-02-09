@@ -21,7 +21,7 @@ pub trait TStreamAccumulator: TokenStream {
 // ======================================= Implementations ========================================
 
 pub mod char_stream {
-
+    
     use super::TokenStream;
     type BytePos = usize;
     type CharPos = usize;
