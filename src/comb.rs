@@ -40,6 +40,32 @@ impl<F, P, R> Parse for Then<P, F>
 
 // ---------------------------------------------- Or ----------------------------------------------
 
+pub struct OrT<R, T, E1, E2>(pub Box<Parse<Input=T, Output = R, Error=E1>>,
+        pub Box<Parse<Input=T, Output = R, Error=E2>>);
+
+impl<R, T, E1, E2> Parse for OrT<R, T, E1, E2>
+    where T: TokenStream
+{
+    type Input = T;
+    type Output = R;
+    type Error = (E1, E2);
+
+    fn parse(&self, tokens: &mut T) -> Result<Self::Output, Self::Error> {
+        // unimplemented!()
+        match self.0.parse(tokens) {
+            Ok(v) => Ok(v),
+            Err(e0) => {
+                match self.1.parse(tokens) {
+                    Ok(v) => Ok(v),
+                    Err(e1) => Err((e0, e1)),
+                }
+            },
+        }
+    }
+}
+
+
+
 
 pub struct Or<P1, P2>(pub P1, pub P2);
 
@@ -167,10 +193,10 @@ impl_tup!(a,b,c);
 // ----------------------------------------- Constructor ------------------------------------------
 pub trait ParserComb: Parse
 where Self: Sized  {
-    fn or<P>(self, parser: P) -> Or<Self, P> {
-        Or(self, parser)
-    }
-
+    
+   fn or<P: Parse>(self, parser: P) -> Or<Self, P> {
+       Or(self, parser)
+   }
 
     fn then<F, B>(self, f: F) -> Then<Self, F>
         where F: Fn(Self::Output) -> B

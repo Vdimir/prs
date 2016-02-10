@@ -137,6 +137,89 @@ fn and_test() {
     assert_eq!(input.peek(), Some('x'));
 }
 
+use prs::comb::OrT;
+#[test]
+fn ort_test() {
+
+    let mut input = CharStream::new("xyz");
+    let x_or_y = OrT(Box::new(Token('x')), Box::new(Token('y')));
+
+    assert_eq!(x_or_y.parse(&mut input), Ok('x'));
+    assert_eq!(x_or_y.parse(&mut input), Ok('y'));
+    assert_eq!(x_or_y.parse(&mut input), Err((Expected('x'), Expected('y'))));
+
+    let xyz = x_or_y.or(Token('z'));
+    assert_eq!(xyz.parse(&mut input), Ok('z'));
+}
+
+
+#[test]
+fn complex_test() {
+
+    #[derive(PartialEq, Debug)]
+    enum OpToken {
+        Plus,
+        Minus,
+        Mul,
+        Div
+    }
+
+    #[derive(PartialEq, Debug)]
+    enum ParenToken {
+        LParen,
+        RParen,
+    }
+
+    #[derive(PartialEq, Debug)]
+    enum ExprToken {
+        Num(u32),
+        Iden(String),
+        Op(OpToken),
+        Paren(ParenToken)
+    }
+
+    let op_symb = OrT(
+                    Box::new(OrT(
+                      Box::new(Token('+').then(|_| OpToken::Plus)),
+                      Box::new(Token('-').then(|_| OpToken::Minus)))),
+                    Box::new(OrT(
+                      Box::new(Token('*').then(|_| OpToken::Mul)),
+                      Box::new(Token('/').then(|_| OpToken::Div)))))
+                  .then(|t| ExprToken::Op(t));
+
+    let paren = Token('(').then(|_| ParenToken::LParen)
+        .or(Token(')').then(|_| ParenToken::RParen))
+        .then(|t| ExprToken::Paren(t));
+
+    let num = predicate("digit",|c: &char| c.is_digit(10)).many()
+                .then(|s: String| ExprToken::Num(s.parse::<u32>().unwrap()));
+
+    let iden = predicate("alphabetic",|c: &char| c.is_alphabetic()).many()
+                .then(|s: String| ExprToken::Iden(s));
+
+    let p = many(
+        OrT(
+            Box::new(OrT(
+                Box::new(op_symb),
+                Box::new(num)
+                )),
+            Box::new(OrT(
+                Box::new(iden),
+                Box::new(paren)
+                )))
+        );
+
+
+    let res: Result<Vec<_>, _> = p.parse(&mut CharStream::new("56+foo-8(5639 )-+dfggtgreg-++f"));
+    println!("{:?}", res.ok().unwrap());
+
+    let res: Result<Vec<_>, _> = p.parse(&mut CharStream::new("5+16/(9+5*(2-(7)))+(40)/10*2-6*9/3*(7-5)+6/2))oook"));
+    println!("{:?}", res.ok().unwrap());
+
+    panic!("!!!");
+}
+
+
 
 // #[test]
 // fn complex_test() {
