@@ -74,6 +74,54 @@ pub mod char_stream {
     }
 }
 
+
+pub mod vec_stream {
+    use super::{ TokenStream, SaveStream };
+
+    type Idx = usize;
+
+    pub struct VecStream<T> {
+        source: Vec<T>,
+        position: Idx,
+    }
+
+    pub struct VecStreamState(Idx);
+
+    impl<T: Clone> SaveStream for VecStream<T> {
+        type State = VecStreamState;
+        fn save(&self) -> VecStreamState {
+            VecStreamState(self.position)
+        }
+
+        fn restore(&mut self, save: VecStreamState) {
+            assert!(self.source.len() >= save.0, "This state out of range");
+            self.position = save.0
+        }
+    }
+
+    impl<T: Clone> TokenStream for VecStream<T> {
+        type Token = T;
+        fn peek(&mut self) -> Option<T> {
+            self.source.get(self.position).cloned()
+        }
+
+        fn next(&mut self) -> Option<T> {
+            let res = self.peek();
+            self.position += 1;
+            res
+        }
+    }
+
+    impl<T: Clone> VecStream<T> {
+        pub fn new(s: Vec<T>) -> Self {
+            VecStream {
+                source: s,
+                position: 0,
+            }
+        }
+    }
+}
+
 pub mod lexem_char_stream {
     
     use super::TokenStream;
@@ -194,4 +242,29 @@ mod tests {
         assert_eq!(stream.next(), None);
         assert_eq!(stream.passed_chars_count(), 11);
     }
+
+
+
+    use super::vec_stream::VecStream;
+    use super::SaveStream;
+    #[test]
+    fn vec_stream_test() {
+        let mut stream = VecStream::new(vec!['x','y','z']);
+        assert_eq!(stream.peek(), Some('x'));
+        assert_eq!(stream.next(), Some('x'));
+        let save = stream.save();
+        assert_eq!(stream.next(), Some('y'));
+        assert_eq!(stream.peek(), Some('z'));
+        assert_eq!(stream.next(), Some('z'));
+
+        assert_eq!(stream.peek(), None);
+        assert_eq!(stream.next(), None);
+
+        stream.restore(save);
+        assert_eq!(stream.next(), Some('y'));
+        assert_eq!(stream.next(), Some('z'));
+        assert_eq!(stream.next(), None);
+
+    }
+
 }

@@ -17,7 +17,7 @@ impl<I, E> Parse for Nop<I, E>
     type Output = ();
     type Error = E;
 
-    fn parse(&self, tokens: &mut Self::Input) -> Result<Self::Output, Self::Error> {
+    fn parse(&self, _: &mut Self::Input) -> Result<Self::Output, Self::Error> {
         Ok(())
     }
 }
@@ -141,7 +141,7 @@ where I: SaveStream,
     fn parse(&self, tokens: &mut Self::Input) -> Result<Self::Output, Self::Error> {
         let res = try!(self.0.parse(tokens));
 
-        let mut it = Iter {
+        let it = Iter {
             parser: &self.1,
             input: tokens
         };
@@ -201,7 +201,8 @@ impl<P> Parse for Maybe<P>
 use stream::SaveStream;
 
 macro_rules! impl_tup {
-    ($($t:ident),*) => (    
+    ($($t:ident),*) => (   
+        #[allow(non_camel_case_types)] 
         impl<$($t,)* I, E> Parse for ($($t,)*) 
         where I: SaveStream,
             $($t: Parse<Input=I, Error=E>,)*

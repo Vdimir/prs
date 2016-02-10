@@ -1,192 +1,39 @@
-#[cfg(test)]
-
 extern crate prs;
 
-use prs::pars::Parse;
 use prs::pars::Token;
 use prs::stream::char_stream::CharStream;
-use prs::stream::TokenStream;
-
-use prs::result::ParseErr::Expected;
-use prs::result::ParseErr::Undefined;
 use prs::comb::ParserComb;
 use prs::comb::nop;
-
-#[test]
-fn token_test() {
-    let mut input = CharStream::new("xyz");
-
-    assert_eq!(Token('x').parse(&mut input), Ok('x'));
-    assert_eq!(Token('y').parse(&mut input), Ok('y'));
-    assert_eq!(Token('w').parse(&mut input), Err(Expected('w')));
-    assert_eq!(Token('z').parse(&mut input), Ok('z'));
-}
-
+use prs::comb::ParserCombDynamic;
+use prs::pars::Parse;
 use prs::pars::predicate;
-#[test]
-fn pred_test() {
-    let mut input = CharStream::new("12a");
-
-    // let dig = predicate::<_,CharStream,_>("digit",|c| c.is_digit(10));
-    let dig = predicate("digit",|c: &char| c.is_digit(10));
-
-    assert_eq!(dig.parse(&mut input), Ok('1'));
-    assert_eq!(dig.parse(&mut input), Ok('2'));
-    assert_eq!(dig.parse(&mut input), Err(Expected("digit".to_owned())));
-    assert_eq!(input.peek(), Some('a'));
-}
-
-
-#[test]
-fn or_test() {
-    let mut input = CharStream::new("xyz");
-    let x_or_y = Token('x').or(Token('y'));
-
-    assert_eq!(x_or_y.parse(&mut input), Ok('x'));
-    assert_eq!(x_or_y.parse(&mut input), Ok('y'));
-    assert_eq!(x_or_y.parse(&mut input), Err((Expected('x'), Expected('y'))));
-
-    let xyz = x_or_y.or(Token('z'));
-    assert_eq!(xyz.parse(&mut input), Ok('z'));
-}
-
-#[test]
-fn then_test() {
-    let dig_square = predicate("digit",|c: &char| c.is_digit(10))
-            .then(|c: char| c.to_digit(10).map(|d| d * d).unwrap());
-
-    let input = &mut CharStream::new("123a");
-    assert_eq!(dig_square.parse(input), Ok(1));
-    assert_eq!(dig_square.parse(input), Ok(4));
-    assert_eq!(dig_square.parse(input), Ok(9));
-    assert_eq!(dig_square.parse(input), Err(Expected("digit".to_owned())));
-}
-
-
 use prs::comb::many;
 
-#[test]
-fn many_test() {
-    let dig = many(predicate("digit",|c: &char| c.is_digit(10)));
 
-    let input = &mut CharStream::new("123a");
-    assert_eq!(dig.parse(input), Ok(vec!['1','2','3']));
-    assert_eq!(dig.parse(input), Err(Expected("digit".to_owned())));
-    assert_eq!(input.peek(), Some('a'));
+
+#[derive(PartialEq, Debug)]
+enum OpToken {
+    Plus,
+    Minus,
+    Mul,
+    Div
+}
+#[derive(PartialEq, Debug)]
+enum ParenToken {
+    LParen,
+    RParen,
+}
+#[derive(PartialEq, Debug)]
+enum ExprToken {
+    None,
+    Num(u32),
+    Iden(String),
+    Op(OpToken),
+    Paren(ParenToken)
 }
 
 #[test]
-fn many_comb_test() {
-    let dig = predicate("digit",|c: &char| c.is_digit(10))
-                .many()
-                .then(|s: String| s.parse::<u32>().unwrap());
-                
-    assert_eq!(dig.parse(&mut CharStream::new("123")), Ok(123));
-}
-
-#[test]
-fn onerr_test() {
-    let mut input = CharStream::new("xyz");
-
-    let x_pars = Token('x').on_err(Expected("token `x`".to_owned()));
-    assert_eq!(x_pars.parse(&mut input), Ok('x'));
-    assert_eq!(x_pars.parse(&mut input), Err(Expected("token `x`".to_owned())));
-}
-
-
-
-use prs::comb::maybe;
-
-#[test]
-fn mabye_test() {
-    let maybe_x = maybe(Token('x'));
-
-    let mut input = CharStream::new("xy");
-    assert_eq!(maybe_x.parse(&mut input), Ok(Some('x')));
-    assert_eq!(maybe_x.parse(&mut input), Ok(None));
-    assert_eq!(maybe_x.parse(&mut input), Ok(None));
-    assert_eq!(input.peek(), Some('y'));
-}
-
-#[test]
-fn mabye_many_test() {
-    let whitespace = maybe(Token(' ').many::<String>());
-
-    let mut input = CharStream::new("     xy");
-    assert!(whitespace.parse(&mut input).is_ok());
-    assert_eq!(input.peek(), Some('x'));
-
-    let mut input = CharStream::new("xy");
-    assert!(whitespace.parse(&mut input).is_ok());
-    assert_eq!(input.peek(), Some('x'));
-}
-
-#[test]
-fn and_test() {
-    let x_and_y = (Token('x'), Token('y'), Token('z'));
-
-    assert_eq!(x_and_y.parse(&mut CharStream::new("xyzx")), Ok(('x', 'y', 'z')));
-
-    let input = &mut CharStream::new("yxx");
-    assert_eq!(x_and_y.parse(input), Err(Expected('x')));
-    assert_eq!(input.peek(), Some('y'));
-
-    let input = &mut CharStream::new("xyy");
-    assert_eq!(x_and_y.parse(input), Err(Expected('z')));
-    assert_eq!(input.peek(), Some('x'));
-}
-
-
-
-#[test]
-fn skip_test() {
-    let x_and_y = (Token('x').skip(Token(' ')), Token('y'));
-
-    assert_eq!(x_and_y.parse(&mut CharStream::new("x y")), Ok(('x', 'y')));
-
-    let input = &mut CharStream::new("xy");
-    assert_eq!(x_and_y.parse(input), Err(Expected(' ')));
-    assert_eq!(input.peek(), Some('x'));
-}
-
-
-
-#[test]
-fn skip_many_test() {
-    let x_and_y = (Token('x').skip_any(Token(' ')), Token('y'));
-
-    assert_eq!(x_and_y.parse(&mut CharStream::new("xy")), Ok(('x', 'y')));
-    assert_eq!(x_and_y.parse(&mut CharStream::new("x y")), Ok(('x', 'y')));
-    assert_eq!(x_and_y.parse(&mut CharStream::new("x     y")), Ok(('x', 'y')));
-
-}
-
-use prs::comb::ParserCombDynamic;
-#[test]
-fn complex_test() {
-
-    #[derive(PartialEq, Debug)]
-    enum OpToken {
-        Plus,
-        Minus,
-        Mul,
-        Div
-    }
-
-    #[derive(PartialEq, Debug)]
-    enum ParenToken {
-        LParen,
-        RParen,
-    }
-
-    #[derive(PartialEq, Debug)]
-    enum ExprToken {
-        None,
-        Num(u32),
-        Iden(String),
-        Op(OpToken),
-        Paren(ParenToken)
-    }
+fn tokenize_test() {
 
     let op_symb = Token('+').then(|_| OpToken::Plus)
                   .or(Token('-').then(|_| OpToken::Minus)
@@ -203,7 +50,7 @@ fn complex_test() {
 
     let iden = predicate("alphabetic",|c: &char| c.is_alphabetic()).many()
                 .then(|s: String| ExprToken::Iden(s));
-    let ws = Token(' ').then(|_| ExprToken::None);//.on_err(((Undefined,(Undefined,Undefined)),Undefined));
+    let ws = Token(' ').then(|_| ExprToken::None);
 
     let p = many(
             (nop().skip_any(ws),
