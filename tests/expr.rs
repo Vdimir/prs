@@ -74,6 +74,7 @@ fn tokenize(input: &str) -> Result<Vec<ExprToken>, ()> {
     return lexer.parse(stream);
 }
 
+#[ignore]
 #[test]
 fn tokenize_test() {
 

@@ -203,8 +203,7 @@ where P: Parse<Input=I>,
 
     type Item = P::Output;
     fn next(&mut self) -> Option<Self::Item> {
-        let res = self.parser.parse(self.input);
-        res.ok()
+        self.parser.parse(self.input).ok()
     }
 }
 

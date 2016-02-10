@@ -35,18 +35,26 @@ fn pred_test() {
 #[test]
 fn fn_parse_test() {
 
-    fn foo<'a>(s: &mut &'a str) -> Result<&'a str, ()> {
-        let off = s.chars()
-            .take_while(|c| c.is_digit(10))
-            .fold(0, |len, c| len + c.len_utf8());
-        if off > 0 {
-            Ok(&s[..off])
-        } else {
-            Err(())
+    fn any_before_space<'a>(s: &mut CharStream<'a>) -> Result<String, ()> {
+        let mut res = String::new();
+        while let Some(c) = s.next() {
+            if c == ' ' {
+                break;
+            }
+            res.push(c);
         }
-
+        Ok(res)
     }
 
-    let p = fn_parser(foo);
-    assert_eq!(p.parse(&mut "1235 25"), Ok("1235"));
+    let p = fn_parser(any_before_space);
+    let input = &mut CharStream::new("abc de");
+    assert_eq!(p.parse(input), Ok("abc".to_owned()));
+    assert_eq!(input.peek(), Some('d'));
+
+    let input = &mut CharStream::new("abcde");
+    assert_eq!(p.parse(input), Ok("abcde".to_owned()));
+    
+    let input = &mut CharStream::new(" abcde");
+    assert_eq!(p.parse(input), Ok("".to_owned()));
+    assert_eq!(input.peek(), Some('a'));
 }

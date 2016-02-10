@@ -114,8 +114,8 @@ impl<S, R, E, F> Parse for FnParser<F, S>
     }
 }
 
-pub fn fn_parser<I, R, E, F>(f: F) -> FnParser<F, I>
-    where F: Fn(&mut I) -> Result<R, E>
+pub fn fn_parser<S, R, E, F>(f: F) -> FnParser<F, S>
+    where F: Fn(&mut S) -> Result<R, E>
 {
     FnParser(f, PhantomData)
 }
