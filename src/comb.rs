@@ -40,6 +40,7 @@ impl<F, P, R> Parse for Then<P, F>
 
 // ---------------------------------------------- Or ----------------------------------------------
 
+
 pub struct Or<P1, P2>(pub P1, pub P2);
 
 impl<R, T, P1, P2> Parse for Or<P1, P2>
@@ -136,27 +137,31 @@ impl<P> Parse for Maybe<P>
 
 use stream::SaveStream;
 
-impl<P1, P2, I, E> Parse for (P1, P2)
-    where I: SaveStream,
-          P1: Parse<Input=I, Error=E>,
-          P2: Parse<Input=I, Error=E>,
-{
-    type Input = I;
-    type Output = (P1::Output, P2::Output);
-    type Error = E;
-    fn parse(&self, tokens: &mut Self::Input) -> Result<Self::Output, Self::Error> {
-        let &(ref p1, ref p2) = self;
-        
-        let saved_tokens = tokens.save();
-
-        let first = try!(p1.parse(tokens));
-
-        match p2.parse(tokens) {
-            Ok(second) => Ok((first, second)),
-            Err(e) => { tokens.restore(saved_tokens); Err(e) }
-        }
-    }
+macro_rules! impl_tup {
+    ($($t:ident),*) => (    
+        impl<$($t,)* I, E> Parse for ($($t,)*) 
+        where I: SaveStream,
+            $($t: Parse<Input=I, Error=E>,)*
+        {
+            type Input = I;
+            type Output = ($($t::Output,)*);
+            type Error = E;
+            fn parse(&self, tokens: &mut Self::Input) -> Result<Self::Output, Self::Error> {
+                let &($( ref $t, )*) = self;
+                let save = tokens.save();
+                Ok(($(
+                    match $t.parse(tokens) {
+                        Ok(res) => res,
+                        Err(e) => { tokens.restore(save); return Err(e); }
+                    },
+                )*))
+            }
+        })
 }
+
+impl_tup!(a,b);
+impl_tup!(a,b,c);
+
 
 
 // ----------------------------------------- Constructor ------------------------------------------

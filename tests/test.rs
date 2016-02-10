@@ -124,18 +124,71 @@ fn mabye_many_test() {
 
 #[test]
 fn and_test() {
-    let x_and_y = (Token('x'), Token('y'));
+    let x_and_y = (Token('x'), Token('y'), Token('z'));
 
-    assert_eq!(x_and_y.parse(&mut CharStream::new("xy")), Ok(('x', 'y')));
+    assert_eq!(x_and_y.parse(&mut CharStream::new("xyzx")), Ok(('x', 'y', 'z')));
 
-    let input = &mut CharStream::new("zy");
+    let input = &mut CharStream::new("yxx");
     assert_eq!(x_and_y.parse(input), Err(Expected('x')));
-    assert_eq!(input.peek(), Some('z'));
+    assert_eq!(input.peek(), Some('y'));
 
-    let input = &mut CharStream::new("xz");
-    assert_eq!(x_and_y.parse(input), Err(Expected('y')));
+    let input = &mut CharStream::new("xyy");
+    assert_eq!(x_and_y.parse(input), Err(Expected('z')));
     assert_eq!(input.peek(), Some('x'));
 }
+
+
+// #[test]
+// fn complex_test() {
+
+//     #[derive(PartialEq, Debug)]
+//     enum OpToken {
+//         Plus,
+//         Minus,
+//         Mul,
+//         Div
+//     }
+
+//     #[derive(PartialEq, Debug)]
+//     enum ParenToken {
+//         LParen,
+//         RParen,
+//     }
+
+//     #[derive(PartialEq, Debug)]
+//     enum ExprToken {
+//         Num(u32),
+//         Iden(String),
+//         Op(OpToken),
+//         Paren(ParenToken)
+//     }
+
+//     let op_symb = Token('+').then(|_| OpToken::Plus)
+//                   .or(Token('-').then(|_| OpToken::Minus)
+//                   .or(Token('*').then(|_| OpToken::Mul)))
+//                   .or(Token('/').then(|_| OpToken::Div))
+//                   .then(|t| ExprToken::Op(t));
+
+//     let paren = Token('(').then(|_| ParenToken::LParen)
+//         .or(Token(')').then(|_| ParenToken::RParen))
+//         .then(|t| ExprToken::Paren(t));
+
+//     let num = predicate("digit",|c: &char| c.is_digit(10)).many()
+//                 .then(|s: String| ExprToken::Num(s.parse::<u32>().unwrap()));
+
+//     let iden = predicate("alphabetic",|c: &char| c.is_alphabetic()).many()
+//                 .then(|s: String| ExprToken::Iden(s));
+
+//     let p = many(op_symb
+//                 .or(num.or(iden))
+//                 .or(paren));
+
+//     let res: Result<Vec<_>, _> = p.parse(&mut CharStream::new("56+foo-8(5639 )-+dfggtgreg-++f"));
+//     println!("{:?}", res.ok().unwrap());
+
+//     let res: Result<Vec<_>, _> = p.parse(&mut CharStream::new("5+16/(9+5*(2-(7)))+(40)/10*2-6*9/3*(7-5)+6/2))"));
+//     println!("{:?}", res.ok().unwrap());
+// }
 
 
 

@@ -46,6 +46,7 @@ pub mod char_stream {
         }
 
         fn restore(&mut self, save: CharStreamState) {
+            assert!(self.source.len() >= save.0, "This state out of range");
             self.position = save.0
         }
     }
