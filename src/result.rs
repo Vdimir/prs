@@ -1,7 +1,9 @@
 
 #[derive(PartialEq, Debug, Clone)]
-pub struct Expected<T>(pub T);
-
+pub enum ParseErr<E> {
+    Undefined,
+    Expected(E)
+}
 // #[derive(PartialEq, Debug)]
 // pub struct Found<T>(pub T);
 

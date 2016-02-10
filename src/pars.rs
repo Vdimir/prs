@@ -31,7 +31,7 @@ impl<'a, I, O, P, E> Parse for &'a P
 // ==================================== Parse Implementations =====================================
 
 // -------------------------------------------- Token ---------------------------------------------
-use result::Expected;
+use result::ParseErr;
 
 pub struct Token<S: TokenStream>(pub S::Token);
 
@@ -41,7 +41,7 @@ impl<S> Parse for Token<S>
 {
     type Input = S;
     type Output = S::Token;
-    type Error = Expected<S::Token>;
+    type Error = ParseErr<S::Token>;
 
     fn parse(&self, tokens: &mut S) -> Result<Self::Output, Self::Error> {
         let next_token = tokens.peek();
@@ -50,7 +50,7 @@ impl<S> Parse for Token<S>
         if satified {
             Ok(tokens.next().unwrap())
         } else {
-            Err(Expected(self.0))
+            Err(ParseErr::Expected(self.0))
         }
     }
 }
@@ -73,7 +73,7 @@ impl<S, F> Parse for Predicate<F, S>
 {
     type Input = S;
     type Output = S::Token;
-    type Error = Expected<String>;
+    type Error = ParseErr<String>;
 
     fn parse(&self, tokens: &mut S) -> Result<Self::Output, Self::Error> {
         let next_token = tokens.peek();
@@ -82,7 +82,7 @@ impl<S, F> Parse for Predicate<F, S>
         if satified {
             Ok(tokens.next().unwrap())
         } else {
-            Err(Expected(self.name.clone()))
+            Err(ParseErr::Expected(self.name.clone()))
         }
     }
 }

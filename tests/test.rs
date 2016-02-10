@@ -7,8 +7,10 @@ use prs::pars::Token;
 use prs::stream::char_stream::CharStream;
 use prs::stream::TokenStream;
 
-use prs::result::Expected;
+use prs::result::ParseErr::Expected;
+use prs::result::ParseErr::Undefined;
 use prs::comb::ParserComb;
+use prs::comb::nop;
 
 #[test]
 fn token_test() {
@@ -82,16 +84,14 @@ fn many_comb_test() {
     assert_eq!(dig.parse(&mut CharStream::new("123")), Ok(123));
 }
 
-// use prs::comb::OnError;
-// #[test]
-// fn onerr_test() {
+#[test]
+fn onerr_test() {
+    let mut input = CharStream::new("xyz");
 
-//     let mut input = CharStream::new("xyz");
-
-//     let x_pars = OnError(Token('x'), Expected("token `x`".to_owned()));
-//     assert_eq!(x_pars.parse(&mut input), Ok('x'));
-//     assert_eq!(x_pars.parse(&mut input), Err(Expected("token `x`".to_owned())));
-// }
+    let x_pars = Token('x').on_err(Expected("token `x`".to_owned()));
+    assert_eq!(x_pars.parse(&mut input), Ok('x'));
+    assert_eq!(x_pars.parse(&mut input), Err(Expected("token `x`".to_owned())));
+}
 
 
 
@@ -136,25 +136,32 @@ fn and_test() {
     assert_eq!(input.peek(), Some('x'));
 }
 
+
+
 #[test]
-fn or_trait_ob_test() {
+fn skip_test() {
+    let x_and_y = (Token('x').skip(Token(' ')), Token('y'));
 
+    assert_eq!(x_and_y.parse(&mut CharStream::new("x y")), Ok(('x', 'y')));
 
-    let mut input = CharStream::new("xyz");
-
-    let x_or_y = Token('x').or(Token('y'));
-
-    assert_eq!(x_or_y.parse(&mut input), Ok('x'));
-    assert_eq!(x_or_y.parse(&mut input), Ok('y'));
-    assert_eq!(x_or_y.parse(&mut input), Err((Expected('x'), Expected('y'))));
-
-    let xyz = x_or_y.or(Token('z'));
-    assert_eq!(xyz.parse(&mut input), Ok('z'));
+    let input = &mut CharStream::new("xy");
+    assert_eq!(x_and_y.parse(input), Err(Expected(' ')));
+    assert_eq!(input.peek(), Some('x'));
 }
 
 
 
-use prs::comb::ParserCombT;
+#[test]
+fn skip_many_test() {
+    let x_and_y = (Token('x').skip_any(Token(' ')), Token('y'));
+
+    assert_eq!(x_and_y.parse(&mut CharStream::new("xy")), Ok(('x', 'y')));
+    assert_eq!(x_and_y.parse(&mut CharStream::new("x y")), Ok(('x', 'y')));
+    assert_eq!(x_and_y.parse(&mut CharStream::new("x     y")), Ok(('x', 'y')));
+
+}
+
+use prs::comb::ParserCombDynamic;
 #[test]
 fn complex_test() {
 
@@ -174,6 +181,7 @@ fn complex_test() {
 
     #[derive(PartialEq, Debug)]
     enum ExprToken {
+        None,
         Num(u32),
         Iden(String),
         Op(OpToken),
@@ -195,16 +203,22 @@ fn complex_test() {
 
     let iden = predicate("alphabetic",|c: &char| c.is_alphabetic()).many()
                 .then(|s: String| ExprToken::Iden(s));
+    let ws = Token(' ').then(|_| ExprToken::None);//.on_err(((Undefined,(Undefined,Undefined)),Undefined));
 
-    let p = many(op_symb
-                .or(num.or(iden))
-                .or(paren));
+    let p = many(
+            (nop().skip_any(ws),
+                op_symb
+                .or(num)
+                .or(iden)
+                .or(paren)
+            ).then(|(_,r)| r)
+        );
 
-    let res: Result<Vec<_>, _> = p.parse(&mut CharStream::new("56+foo-8(5639 )-+dfggtgreg-++f"));
-    println!("{:?}", res.ok().unwrap());
+    let res: Result<Vec<_>, _> = p.parse(&mut CharStream::new("   56+foo  -8 ( 5639 )-+dfggtgreg-++f  "));
+    assert_eq!(res.unwrap().pop().unwrap(), ExprToken::Iden("f".to_owned()));
 
-    let res: Result<Vec<_>, _> = p.parse(&mut CharStream::new("5+16/(9+5*(2-(7)))+(40)/10*2-6*9/3*(7-5)+6/2))"));
-    println!("{:?}", res.ok().unwrap());
+    let res: Result<Vec<_>, _> = p.parse(&mut CharStream::new(" 5 +  16 /(9+5*(2-  (7)) )+ (40)/10*2-6*9/3*(7-5)+6/2))  666"));
+    assert_eq!(res.unwrap().pop().unwrap(), ExprToken::Num(666));
     // panic!("!!!");
 }
 
