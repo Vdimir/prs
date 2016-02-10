@@ -7,6 +7,7 @@ use prs::stream::TokenStream;
 use prs::result::ParseErr::Expected;
 use prs::pars::Parse;
 use prs::pars::predicate;
+use prs::pars::fn_parser;
 
 #[test]
 fn token_test() {
@@ -31,3 +32,21 @@ fn pred_test() {
     assert_eq!(input.peek(), Some('a'));
 }
 
+#[test]
+fn fn_parse_test() {
+
+    fn foo<'a>(s: &mut &'a str) -> Result<&'a str, ()> {
+        let off = s.chars()
+            .take_while(|c| c.is_digit(10))
+            .fold(0, |len, c| len + c.len_utf8());
+        if off > 0 {
+            Ok(&s[..off])
+        } else {
+            Err(())
+        }
+
+    }
+
+    let p = fn_parser(foo);
+    assert_eq!(p.parse(&mut "1235 25"), Ok("1235"));
+}

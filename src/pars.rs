@@ -8,7 +8,7 @@ use stream::TokenStream;
 // ========================================= Parse Trait ==========================================
 
 pub trait Parse {
-    type Input: TokenStream;
+    type Input;
     type Output;
     type Error;
 
@@ -16,8 +16,8 @@ pub trait Parse {
 }
 
 impl<'a, I, O, P, E> Parse for &'a P
-    where I: TokenStream,
-          P: Parse<Input=I, Output = O, Error=E>
+    where P: Parse<Input=I, Output = O, Error=E>,
+          // I: TokenStream,
 {
     type Input = I;
     type Output = O;
@@ -103,8 +103,7 @@ where T: TokenStream,
 pub struct FnParser<F, I>(F, PhantomData<I>);
 
 impl<S, R, E, F> Parse for FnParser<F, S>
-    where S: TokenStream,
-          F: Fn(&mut S) -> Result<R, E>
+    where F: Fn(&mut S) -> Result<R, E>
 {
     type Input = S;
     type Output = R;
@@ -115,9 +114,8 @@ impl<S, R, E, F> Parse for FnParser<F, S>
     }
 }
 
-// pub fn fn_parser<I, R, E, F>(f: F) -> FnParser<F>
-//     where I: TokenStream,
-//           F: Fn(I) -> Result<R, E>
-// {
-//     FnParser(f, PhantomData)
-// }
+pub fn fn_parser<I, R, E, F>(f: F) -> FnParser<F, I>
+    where F: Fn(&mut I) -> Result<R, E>
+{
+    FnParser(f, PhantomData)
+}

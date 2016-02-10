@@ -26,6 +26,30 @@ pub fn nop<I, E>() -> Nop<I, E> {
     Nop(PhantomData,PhantomData)
 }
 
+// --------------------------------------------- Eof ---------------------------------------------
+pub struct Eof<I>(PhantomData<I>);
+// where  P: Parse, F: Fn(P::Output) -> R
+
+impl<I> Parse for Eof<I>
+    where I: TokenStream,
+{
+    type Input = I;
+    type Output = ();
+    type Error = ();
+
+    fn parse(&self, tokens: &mut Self::Input) -> Result<Self::Output, Self::Error> {
+        match tokens.peek() {
+            Some(_) => Err(()),
+            None => Ok(()),
+        }
+    }
+}
+
+pub fn eof<I>() -> Eof<I> {
+    Eof(PhantomData)
+}
+
+
 
 // --------------------------------------------- Then ---------------------------------------------
 pub struct Then<P, F>(P, F);
@@ -94,7 +118,9 @@ use std::marker::PhantomData;
 pub struct Many<P, R>(P, PhantomData<R>);
 
 impl<P, R> Parse for Many<P, R>
-    where P: Parse, R: FromIterator<P::Output>
+    where P: Parse,
+          P::Input: TokenStream,
+          R: FromIterator<P::Output>,
 {
     type Input = P::Input;
     type Output = R;

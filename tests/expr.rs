@@ -4,11 +4,12 @@ use prs::pars::Token;
 use prs::stream::char_stream::CharStream;
 use prs::comb::ParserComb;
 use prs::comb::nop;
+use prs::comb::eof;
 use prs::comb::ParserCombDynamic;
 use prs::pars::Parse;
 use prs::pars::predicate;
 use prs::comb::many;
-
+// use prs::result::ParseErr;
 
 
 #[derive(PartialEq, Debug)]
@@ -32,8 +33,8 @@ enum ExprToken {
     Paren(ParenToken)
 }
 
-#[test]
-fn tokenize_test() {
+fn tokenize(input: &str) -> Result<Vec<ExprToken>, ()> {
+    let stream = &mut CharStream::new(input);
 
     let op_symb = Token('+').then(|_| OpToken::Plus)
                   .or(Token('-').then(|_| OpToken::Minus)
@@ -45,28 +46,49 @@ fn tokenize_test() {
         .or(Token(')').then(|_| ParenToken::RParen))
         .then(|t| ExprToken::Paren(t));
 
-    let num = predicate("digit",|c: &char| c.is_digit(10)).many()
+    let digit = predicate("digit",|c: &char| c.is_digit(10));
+
+    let num = digit.many()
                 .then(|s: String| ExprToken::Num(s.parse::<u32>().unwrap()));
 
-    let iden = predicate("alphabetic",|c: &char| c.is_alphabetic()).many()
+    let letter = predicate("alphabetic",|c: &char| c.is_alphabetic());
+
+    // let iden = (letter, many(letter.or(digit)))
+                // .then(|(c, s): (char, Vec<char>)| ExprToken::Iden(
+                    // Some(c).into_iter().chain(s.into_iter()).collect()));
+    let iden = many(letter)
                 .then(|s: String| ExprToken::Iden(s));
+
     let ws = Token(' ').then(|_| ExprToken::None);
 
-    let p = many(
-            (nop().skip_any(ws),
-                op_symb
+    let lexer = //(nop().skip_any(&ws),
+        many(op_symb
                 .or(num)
                 .or(iden)
                 .or(paren)
-            ).then(|(_,r)| r)
-        );
+                .skip_any(&ws))
+        // ).then(|(_,x)| x)
+        .on_err(())
+        .skip(eof());
+            
+    return lexer.parse(stream);
+}
 
-    let res: Result<Vec<_>, _> = p.parse(&mut CharStream::new("   56+foo  -8 ( 5639 )-+dfggtgreg-++f  "));
-    assert_eq!(res.unwrap().pop().unwrap(), ExprToken::Iden("f".to_owned()));
+#[test]
+fn tokenize_test() {
 
-    let res: Result<Vec<_>, _> = p.parse(&mut CharStream::new(" 5 +  16 /(9+5*(2-  (7)) )+ (40)/10*2-6*9/3*(7-5)+6/2))  666"));
-    assert_eq!(res.unwrap().pop().unwrap(), ExprToken::Num(666));
-    // panic!("!!!");
+    let res = tokenize("150  +( foo)  ");
+    assert_eq!(res, Ok(vec![
+            ExprToken::Num(150),
+            ExprToken::Op(OpToken::Plus),
+            ExprToken::Paren((ParenToken::LParen)),
+            ExprToken::Iden("foo".to_owned()),
+            ExprToken::Paren((ParenToken::RParen)),
+        ]));
+
+    let res = tokenize("5 + 4a");
+    println!("{:?}", res);    
+    panic!("TODO");
 }
 
 

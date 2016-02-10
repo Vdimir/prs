@@ -2,7 +2,8 @@
 #[derive(PartialEq, Debug, Clone)]
 pub enum ParseErr<E> {
     Undefined,
-    Expected(E)
+    Expected(E),
+    Complex(Box<ParseErr<E>>, Box<ParseErr<E>>)
 }
 // #[derive(PartialEq, Debug)]
 // pub struct Found<T>(pub T);
