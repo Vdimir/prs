@@ -40,33 +40,6 @@ impl<F, P, R> Parse for Then<P, F>
 
 // ---------------------------------------------- Or ----------------------------------------------
 
-pub struct OrT<R, T, E1, E2>(pub Box<Parse<Input=T, Output = R, Error=E1>>,
-        pub Box<Parse<Input=T, Output = R, Error=E2>>);
-
-impl<R, T, E1, E2> Parse for OrT<R, T, E1, E2>
-    where T: TokenStream
-{
-    type Input = T;
-    type Output = R;
-    type Error = (E1, E2);
-
-    fn parse(&self, tokens: &mut T) -> Result<Self::Output, Self::Error> {
-        // unimplemented!()
-        match self.0.parse(tokens) {
-            Ok(v) => Ok(v),
-            Err(e0) => {
-                match self.1.parse(tokens) {
-                    Ok(v) => Ok(v),
-                    Err(e1) => Err((e0, e1)),
-                }
-            },
-        }
-    }
-}
-
-
-
-
 pub struct Or<P1, P2>(pub P1, pub P2);
 
 impl<R, T, P1, P2> Parse for Or<P1, P2>
@@ -191,10 +164,53 @@ impl_tup!(a,b,c);
 
 
 // ----------------------------------------- Constructor ------------------------------------------
+
+
+pub struct DynamicOr<'a, R, T, E1, E2>(
+        Box<Parse<Input=T, Output = R, Error=E1> + 'a>,
+        Box<Parse<Input=T, Output = R, Error=E2> + 'a>);
+
+impl<'a, R, T, E1, E2> Parse for DynamicOr<'a, R, T, E1, E2>
+    where T: TokenStream
+{
+    type Input = T;
+    type Output = R;
+    type Error = (E1, E2);
+
+    fn parse(&self, tokens: &mut T) -> Result<Self::Output, Self::Error> {
+
+        match self.0.parse(tokens) {
+            Ok(v) => Ok(v),
+            Err(e0) => {
+                match self.1.parse(tokens) {
+                    Ok(v) => Ok(v),
+                    Err(e1) => Err((e0, e1)),
+                }
+            },
+        }
+    }
+}
+
+pub trait ParserCombT<'a>: Parse
+where Self: Sized + 'a  {
+
+    fn or<P, E2>(self, parser: P) -> DynamicOr<'a, Self::Output, Self::Input, Self::Error, E2>
+    where P: Parse<Input=Self::Input, Output=Self::Output, Error=E2> + 'a
+    {
+        DynamicOr(Box::new(self), Box::new(parser))
+    }
+}
+
+impl<'a, P> ParserCombT<'a> for P
+    where P: Parse + 'a
+{}
+
+
 pub trait ParserComb: Parse
 where Self: Sized  {
     
-   fn or<P: Parse>(self, parser: P) -> Or<Self, P> {
+
+   fn static_or<P: Parse>(self, parser: P) -> Or<Self, P> {
        Or(self, parser)
    }
 
