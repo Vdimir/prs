@@ -154,14 +154,14 @@ impl Node {
     }
 
 }
-/*
+
 use prs::stream::vec_stream::VecStream;
 fn parse_expr(s: &str) -> Result<Node, ()> {
 
     let tokens = &mut VecStream::new(tokenize(s).unwrap());
 
-    fn num_p<S>(s: &mut S) -> Result<Node, ()>
-    where S: TokenStream<Token=ExprToken>,
+    fn num_p(s: &mut VecStream<ExprToken>) -> Result<Node, ()>
+    // where S: TokenStream<Token=ExprToken>,
     {
         if let Some(ExprToken::Num(n)) = s.peek() {
             s.next();
@@ -171,8 +171,8 @@ fn parse_expr(s: &str) -> Result<Node, ()> {
         }
     }
 
-    fn expression<S>(s: &mut S) -> Result<Node, ()>
-    where S: SavableStream<Token=ExprToken>,
+    fn expression(s: &mut VecStream<ExprToken>) -> Result<Node, ()>
+    // where S: SavableStream<Token=ExprToken>,
     {
         fn lust_to_tree((mut f, r): (Node, Option<Vec<(ExprToken, Node)>>)) -> Node {
             for (op, rh) in r.unwrap_or(Vec::new()).into_iter() {
@@ -196,17 +196,21 @@ fn parse_expr(s: &str) -> Result<Node, ()> {
         )))
         .then(lust_to_tree);
 
-        let inf_add = (&inf_mul, maybe(many((
-            predicate(|t: &ExprToken| t.is_add_op()),
-            &inf_mul)
-        )))
-        .then(lust_to_tree);
 
-        inf_add.parse(s)
+        // let inf_add = (&inf_mul, maybe(many((
+        //     predicate(|t: &ExprToken| t.is_add_op()),
+        //     &inf_mul)
+        // )))
+        // .then(lust_to_tree);
+        // let expr_parser = inf_add;
+        let expr_parser = inf_mul;
+        expr_parser.parse(s)
         // Err(())
     }
 
-    fn_parser(expression).parse(tokens)
+    (fn_parser(expression), eof())
+                    .then(|(d,_)| d)
+                    .parse(tokens)
 }
 
 #[test]
@@ -214,6 +218,13 @@ fn expr_test() {
 
 
     assert_eq!(parse_expr("3"), Ok(Node::Num(3)));
+
+    assert_eq!(parse_expr("(1*2)*3"), Ok(
+        Node::Mul(Box::new(
+            (Node::Mul(Box::new(
+                (Node::Num(1), Node::Num(2)))),
+            Node::Num(3))
+            ))));
 
     assert_eq!(parse_expr("1+2*3"), Ok(
         Node::Add(
@@ -223,15 +234,8 @@ fn expr_test() {
                     Box::new((Node::Num(2),Node::Num(2))))
             )))));
 
-    assert_eq!(parse_expr("(1+2)*3"), Ok(
-        Node::Mul(Box::new(
-            (Node::Add(Box::new(
-                (Node::Num(1), Node::Num(2)))),
-            Node::Num(3))
-            ))));
-
 }
-*/
+
 // ******************************************************************************
 
 // #[test]
