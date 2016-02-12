@@ -18,7 +18,7 @@ pub trait TokenStream {
 // }
 
 
-pub trait SaveStream: TokenStream {
+pub trait SavableStream: TokenStream {
     type State;
     fn save(&self) -> Self::State;
     fn restore(&mut self, Self::State);
@@ -28,7 +28,7 @@ pub trait SaveStream: TokenStream {
 // ======================================= Implementations ========================================
 
 pub mod char_stream {
-    use super::{ TokenStream, SaveStream };
+    use super::{ TokenStream, SavableStream };
 
     type BytePos = usize;
 
@@ -39,7 +39,7 @@ pub mod char_stream {
 
     pub struct CharStreamState(BytePos);
 
-    impl<'a> SaveStream for CharStream<'a> {
+    impl<'a> SavableStream for CharStream<'a> {
         type State = CharStreamState;
         fn save(&self) -> CharStreamState {
             CharStreamState(self.position)
@@ -76,7 +76,7 @@ pub mod char_stream {
 
 
 pub mod vec_stream {
-    use super::{ TokenStream, SaveStream };
+    use super::{ TokenStream, SavableStream };
 
     type Idx = usize;
 
@@ -87,7 +87,7 @@ pub mod vec_stream {
 
     pub struct VecStreamState(Idx);
 
-    impl<T: Clone> SaveStream for VecStream<T> {
+    impl<T: Clone> SavableStream for VecStream<T> {
         type State = VecStreamState;
         fn save(&self) -> VecStreamState {
             VecStreamState(self.position)
@@ -246,7 +246,7 @@ mod tests {
 
 
     use super::vec_stream::VecStream;
-    use super::SaveStream;
+    use super::SavableStream;
     #[test]
     fn vec_stream_test() {
         let mut stream = VecStream::new(vec!['x','y','z']);

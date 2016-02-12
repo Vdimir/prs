@@ -4,6 +4,9 @@
 
 use pars::Parse;
 use stream::TokenStream;
+use std::iter::FromIterator;
+use std::marker::PhantomData;
+use stream::SavableStream;
 
 
 // --------------------------------------------- Nop ---------------------------------------------
@@ -48,8 +51,6 @@ impl<I> Parse for Eof<I>
 pub fn eof<I>() -> Eof<I> {
     Eof(PhantomData)
 }
-
-
 
 // --------------------------------------------- Then ---------------------------------------------
 pub struct Then<P, F>(P, F);
@@ -112,9 +113,6 @@ impl<R, T, P1, P2> Parse for Or<P1, P2>
 }
 
 // -------------------------------------------- Many ----------------------------------------------
-use std::iter::FromIterator;
-use std::marker::PhantomData;
-
 pub struct Many<P, R>(P, PhantomData<R>);
 
 impl<P, R> Parse for Many<P, R>
@@ -139,11 +137,11 @@ impl<P, R> Parse for Many<P, R>
                     .collect());
     }
 }
-// -------------------------------------------- Skip ----------------------------------------------
 
+// -------------------------------------------- Skip ----------------------------------------------
 pub struct Skip<P1, P2>(P1,P2);
 impl<P1, P2, I, E> Parse for Skip<P1, P2>
-where I: SaveStream,
+where I: SavableStream,
     P1: Parse<Input=I, Error=E>,
     P2: Parse<Input=I, Error=E>,
 {
@@ -157,7 +155,7 @@ where I: SaveStream,
 
 pub struct SkipAny<P1, P2>(P1,P2);
 impl<P1, P2, I, E> Parse for SkipAny<P1, P2>
-where I: SaveStream,
+where I: SavableStream,
     P1: Parse<Input=I, Error=E>,
     P2: Parse<Input=I>,
 {
@@ -180,8 +178,6 @@ where I: SaveStream,
         Ok(res)
     }
 }
-
-
 
 struct Iter<'a, P, I: 'a> {
     parser: P,
@@ -223,13 +219,11 @@ impl<P> Parse for Maybe<P>
     }
 }
 
-use stream::SaveStream;
-
 macro_rules! impl_tup {
     ($($t:ident),*) => (   
         #[allow(non_camel_case_types)] 
         impl<$($t,)* I, E> Parse for ($($t,)*) 
-        where I: SaveStream,
+        where I: SavableStream,
             $($t: Parse<Input=I, Error=E>,)*
         {
             type Input = I;
@@ -251,10 +245,11 @@ macro_rules! impl_tup {
 impl_tup!(a,b);
 impl_tup!(a,b,c);
 
+// ----------------------------------------- AnyToken ------------------------------------------
 
 
+//
 // ----------------------------------------- Constructor ------------------------------------------
-
 
 pub struct DynamicOr<'a, R, T, E1, E2>(
         Box<Parse<Input=T, Output = R, Error=E1> + 'a>,
@@ -268,15 +263,14 @@ impl<'a, R, T, E1, E2> Parse for DynamicOr<'a, R, T, E1, E2>
     type Error = (E1, E2);
 
     fn parse(&self, tokens: &mut T) -> Result<Self::Output, Self::Error> {
-
         match self.0.parse(tokens) {
-            Ok(v) => Ok(v),
-            Err(e0) => {
-                match self.1.parse(tokens) {
-                    Ok(v) => Ok(v),
-                    Err(e1) => Err((e0, e1)),
-                }
-            },
+          Ok(v) => Ok(v),
+          Err(e0) => {
+              match self.1.parse(tokens) {
+                Ok(v) => Ok(v),
+                Err(e1) => Err((e0, e1)),
+              }
+          },
         }
     }
 }
@@ -295,18 +289,15 @@ impl<'a, P> ParserCombDynamic<'a> for P
     where P: Parse + 'a
 {}
 
-
 pub trait ParserComb: Parse
 where Self: Sized  {
     
-
-   fn static_or<P: Parse>(self, parser: P) -> Or<Self, P> {
-       Or(self, parser)
-   }
+    fn static_or<P: Parse>(self, parser: P) -> Or<Self, P> {
+        Or(self, parser)
+    }
 
     fn then<F, B>(self, f: F) -> Then<Self, F>
-        where F: Fn(Self::Output) -> B
-    {
+    where F: Fn(Self::Output) -> B {
         Then(self, f)
     }
 
@@ -315,14 +306,12 @@ where Self: Sized  {
     }
 
     fn skip<P>(self, parser: P) -> Skip<Self, P>
-        where P: Parse<Input=Self::Input, Error=Self::Error>
-    {
+    where P: Parse<Input=Self::Input, Error=Self::Error> {
         Skip(self, parser)
     }
 
     fn skip_any<P>(self, parser: P) -> SkipAny<Self, P>
-        where P: Parse<Input=Self::Input>
-    {
+    where P: Parse<Input=Self::Input> {
         SkipAny(self, parser)
     }
 
@@ -333,7 +322,6 @@ where Self: Sized  {
     fn on_err<E>(self, err: E) -> OnError<Self, E> {
         OnError(self, err)
     }
-
 }
 
 pub fn many<P, R>(p: P) -> Many<P, R>{
@@ -343,7 +331,6 @@ pub fn many<P, R>(p: P) -> Many<P, R>{
 pub fn maybe<P>(p: P) -> Maybe<P>{
     Maybe(p)
 }
-
 
 
 impl<P> ParserComb for P

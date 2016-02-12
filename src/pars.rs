@@ -37,7 +37,7 @@ pub struct Token<S: TokenStream>(pub S::Token);
 
 impl<S> Parse for Token<S>
     where S: TokenStream,
-          S::Token: PartialEq + Copy
+          S::Token: PartialEq + Clone
 {
     type Input = S;
     type Output = S::Token;
@@ -50,19 +50,16 @@ impl<S> Parse for Token<S>
         if satified {
             Ok(tokens.next().unwrap())
         } else {
-            Err(ParseErr::Expected(self.0))
+            Err(ParseErr::Expected(self.0.clone()))
         }
     }
 }
 
 // ------------------------------------------ Predicate -------------------------------------------
-
-// Use `name` or provide only `on_error()` for parsers and show none by default?
 #[derive(Clone)]
 pub struct Predicate<F, S>
 where S: TokenStream,
      F: Fn(&S::Token) -> bool {
-    name: String,
     predicate: F,
     _phantom: PhantomData<S>
 }
@@ -73,7 +70,7 @@ impl<S, F> Parse for Predicate<F, S>
 {
     type Input = S;
     type Output = S::Token;
-    type Error = ParseErr<String>;
+    type Error = ();
 
     fn parse(&self, tokens: &mut S) -> Result<Self::Output, Self::Error> {
         let next_token = tokens.peek();
@@ -82,18 +79,16 @@ impl<S, F> Parse for Predicate<F, S>
         if satified {
             Ok(tokens.next().unwrap())
         } else {
-            Err(ParseErr::Expected(self.name.clone()))
+            Err(())
         }
     }
 }
 
-pub fn predicate<F, T, S>(name: S, f: F) -> Predicate<F, T>
+pub fn predicate<F, T>(f: F) -> Predicate<F, T>
 where T: TokenStream,
       F: Fn(&T::Token) -> bool,
-      S: Into<String>
 {
     Predicate {
-        name: name.into(),
         predicate: f,
         _phantom: PhantomData
     }

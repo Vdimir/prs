@@ -8,6 +8,7 @@ use prs::result::ParseErr::Expected;
 use prs::pars::Parse;
 use prs::pars::predicate;
 use prs::pars::fn_parser;
+use prs::comb::ParserComb;
 
 #[test]
 fn token_test() {
@@ -24,11 +25,11 @@ fn pred_test() {
     let mut input = CharStream::new("12a");
 
     // let dig = predicate::<_,CharStream,_>("digit",|c| c.is_digit(10));
-    let dig = predicate("digit",|c: &char| c.is_digit(10));
+    let dig = predicate(|c: &char| c.is_digit(10)).on_err(Expected("digit"));
 
     assert_eq!(dig.parse(&mut input), Ok('1'));
     assert_eq!(dig.parse(&mut input), Ok('2'));
-    assert_eq!(dig.parse(&mut input), Err(Expected("digit".to_owned())));
+    assert_eq!(dig.parse(&mut input), Err(Expected("digit")));
     assert_eq!(input.peek(), Some('a'));
 }
 

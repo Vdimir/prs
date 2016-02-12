@@ -1,7 +1,6 @@
 
 extern crate prs;
 
-
 use prs::pars::Token;
 use prs::stream::char_stream::CharStream;
 use prs::stream::TokenStream;
@@ -29,31 +28,32 @@ fn or_test() {
 
 #[test]
 fn then_test() {
-    let dig_square = predicate("digit",|c: &char| c.is_digit(10))
+    let dig_square = predicate(|c: &char| c.is_digit(10))
+            .on_err(Expected("digit"))
             .then(|c: char| c.to_digit(10).map(|d| d * d).unwrap());
 
     let input = &mut CharStream::new("123a");
     assert_eq!(dig_square.parse(input), Ok(1));
     assert_eq!(dig_square.parse(input), Ok(4));
     assert_eq!(dig_square.parse(input), Ok(9));
-    assert_eq!(dig_square.parse(input), Err(Expected("digit".to_owned())));
+    assert_eq!(dig_square.parse(input), Err(Expected("digit")));
 }
-
-
 
 #[test]
 fn many_test() {
-    let dig = many(predicate("digit",|c: &char| c.is_digit(10)));
+    let dig = many(predicate(|c: &char| c.is_digit(10)))
+            .on_err(Expected("digit"));
 
     let input = &mut CharStream::new("123a");
     assert_eq!(dig.parse(input), Ok(vec!['1','2','3']));
-    assert_eq!(dig.parse(input), Err(Expected("digit".to_owned())));
+    assert_eq!(dig.parse(input), Err(Expected("digit")));
     assert_eq!(input.peek(), Some('a'));
 }
 
 #[test]
 fn many_comb_test() {
-    let dig = predicate("digit",|c: &char| c.is_digit(10))
+    let dig = predicate(|c: &char| c.is_digit(10))
+                .on_err(Expected("digit"))
                 .many()
                 .then(|s: String| s.parse::<u32>().unwrap());
                 
@@ -68,9 +68,6 @@ fn onerr_test() {
     assert_eq!(x_pars.parse(&mut input), Ok('x'));
     assert_eq!(x_pars.parse(&mut input), Err(Expected("token `x`".to_owned())));
 }
-
-
-
 
 #[test]
 fn mabye_test() {
@@ -111,8 +108,6 @@ fn and_test() {
     assert_eq!(input.peek(), Some('x'));
 }
 
-
-
 #[test]
 fn skip_test() {
     let x_and_y = (Token('x').skip(Token(' ')), Token('y'));
@@ -124,8 +119,6 @@ fn skip_test() {
     assert_eq!(input.peek(), Some('x'));
 }
 
-
-
 #[test]
 fn skip_many_test() {
     let x_and_y = (Token('x').skip_any(Token(' ')), Token('y'));
@@ -135,4 +128,3 @@ fn skip_many_test() {
     assert_eq!(x_and_y.parse(&mut CharStream::new("x     y")), Ok(('x', 'y')));
 
 }
-
