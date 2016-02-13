@@ -14,6 +14,7 @@ use prs::pars::fn_parser;
 use prs::comb::many;
 use prs::comb::maybe;
 // use prs::result::ParseErr;
+use prs::comb::Pair;
 
 
 
@@ -174,36 +175,49 @@ fn parse_expr(s: &str) -> Result<Node, ()> {
     fn expression(s: &mut VecStream<ExprToken>) -> Result<Node, ()>
     // where S: SavableStream<Token=ExprToken>,
     {
-        fn lust_to_tree((mut f, r): (Node, Option<Vec<(ExprToken, Node)>>)) -> Node {
+        fn list_to_tree((mut f, r): (Node, Option<Vec<(ExprToken, Node)>>)) -> Node {
             for (op, rh) in r.unwrap_or(Vec::new()).into_iter() {
                 f = Node::create_op(op, f, rh);
             }
             f
         }
 
-        let num = fn_parser(num_p);
-        let parens_exp = 
-            (Token(ExprToken::LParen).on_err(()),
-            fn_parser(expression),
-            Token(ExprToken::RParen).on_err(()))
-            .then(|(_, e, _)| e);
 
-        let factor = num.or(parens_exp).on_err(());
+        // let factor = ;
 
-        let inf_mul = (&factor, maybe(many((
+        fn fac(s: &mut VecStream<ExprToken>) -> Result<Node, ()> {
+
+            let num = fn_parser(num_p);
+            let parens_exp = 
+                (Token(ExprToken::LParen).on_err(()),
+                fn_parser(expression),
+                Token(ExprToken::RParen).on_err(()))
+                .then(|(_, e, _)| e);
+            num.or(parens_exp).on_err(()).parse(s)
+        }
+
+
+        let inf_mul = (fn_parser(fac), maybe(many((
             predicate(|t: &ExprToken| t.is_mul_op()),
-            &factor)
+            fn_parser(fac))
         )))
-        .then(lust_to_tree);
+        .then(list_to_tree);
 
+        let inf_mul0= (fn_parser(fac), maybe(many((
+            predicate(|t: &ExprToken| t.is_mul_op()),
+            fn_parser(fac))
+        )))
+        .then(list_to_tree);
 
-        // let inf_add = (&inf_mul, maybe(many((
-        //     predicate(|t: &ExprToken| t.is_add_op()),
-        //     &inf_mul)
-        // )))
-        // .then(lust_to_tree);
-        // let expr_parser = inf_add;
-        let expr_parser = inf_mul;
+        let inf_add = Pair
+        (Box::new(inf_mul), Box::new(maybe(many(
+           Pair(Box::new(predicate(|t: &ExprToken| t.is_add_op())),
+           Box::new(inf_mul0))
+        ))))
+        .then(list_to_tree);
+
+        let expr_parser = inf_add;
+        // let expr_parser = inf_mul;
         expr_parser.parse(s)
         // Err(())
     }
@@ -231,112 +245,14 @@ fn expr_test() {
             Box::new((
                 Node::Num(1),
                 Node::Mul(
-                    Box::new((Node::Num(2),Node::Num(2))))
+                    Box::new((Node::Num(2),Node::Num(3))))
             )))));
 
+
+    assert_eq!(parse_expr("1+5 /  9  * 3"), Ok(
+               Node::Add(Box::new((Node::Num(1),
+                       Node::Mul(Box::new((Node::Div(Box::new((Node::Num(5),
+                                           Node::Num(9)))),
+                       Node::Num(3)))))))));
+
 }
-
-// ******************************************************************************
-
-// #[test]
-// fn expr_test() {
-
-//     #[derive(PartialEq, Debug, Clone)]
-//     enum Node {
-//         Num(i32),
-//         Add(Box<(Node, Node)>),
-//         Sub(Box<(Node, Node)>),
-//         Mul(Box<(Node, Node)>),
-//         Div(Box<(Node, Node)>),
-//     }
-
-//     impl Node {
-//         fn create_op(op_symb: char, lhs: Node, rhs: Node) -> Self {
-//             match op_symb {
-//                 '+' => Node::Add(Self::node_pair(lhs, rhs)),
-//                 '-' => Node::Sub(Self::node_pair(lhs, rhs)),
-//                 '*' => Node::Mul(Self::node_pair(lhs, rhs)),
-//                 '/' => Node::Div(Self::node_pair(lhs, rhs)),
-//                 _ => panic!("{:?} not allowed", op_symb),
-//             }
-//         }
-
-//         fn node_pair(lhs: Node, rhs: Node) -> Box<(Node, Node)> {
-//             Box::new((lhs, rhs))
-//         }
-
-//         fn calc(&self) -> i32 {
-//             match self {
-//                 &Node::Num(n) => n,
-//                 &Node::Add(ref box_pair) => box_pair.0.calc() + box_pair.1.calc(),
-//                 &Node::Sub(ref box_pair) => box_pair.0.calc() - box_pair.1.calc(),
-//                 &Node::Mul(ref box_pair) => box_pair.0.calc() * box_pair.1.calc(),
-//                 &Node::Div(ref box_pair) => box_pair.0.calc() / box_pair.1.calc(),
-//             }
-//         }
-//     }
-
-//     fn list_to_tree((mut f, r): (Node, Option<Vec<(char, Node)>>)) -> Node {
-//         for &(op,  ref rh) in r.unwrap_or(Vec::new()).iter() {
-//             f = Node::create_op(op, f, rh.clone());
-//         }
-//         return f;
-//     }
-
-//     fn num<'a>(tokens: CharsStream<'a>) -> ParseResult<Node, CharsStream<'a>> {
-//         (pred(|c: &char| c.is_numeric())
-//              .greedy()
-//              .skip(maybe(token(' ').greedy()))
-//              .map(|s: &str| Node::Num(s.parse::<i32>().unwrap())))
-//             .parse(tokens)
-//     }
-
-//     fn parens_expr<'a>(tokens: CharsStream<'a>) -> ParseResult<Node, CharsStream<'a>> {
-//         (token('(')
-//              .skip(maybe(token(' ').greedy()))
-//              .and(fn_parser(add_op).skip(token(')').skip(maybe(token(' ').greedy())))))
-//             .map(|(_, a)| a)
-//             .parse(tokens)
-//     }
-
-//     fn mul_op<'a>(tokens: CharsStream<'a>) -> ParseResult<Node, CharsStream<'a>> {
-//         let mul_symb = token('*').skip(maybe(token(' ').greedy()));
-//         let div_symb = token('/').skip(maybe(token(' ').greedy()));;
-//         let mul_div = mul_symb.or(div_symb);
-//         fn_parser(num)
-//             .or(fn_parser(parens_expr))
-//             .and(maybe(rep(mul_div.and(fn_parser(num).or(fn_parser(parens_expr))))))
-//             .map(list_to_tree)
-//             .parse(tokens)
-//     }
-
-//     assert_eq!(fn_parser(mul_op).parse(CharsStream::new("018 ")).res.unwrap(), Node::Num(18));
-
-//     fn add_op<'a>(tokens: CharsStream<'a>) -> ParseResult<Node, CharsStream<'a>> {
-//         let add_symb = token('+').skip(maybe(token(' ').greedy()));
-//         let sub_symb = token('-').skip(maybe(token(' ').greedy()));;
-//         let add_sub_symb = add_symb.or(sub_symb);
-//         fn_parser(mul_op)
-//             .and(maybe(rep(add_sub_symb.and(fn_parser(mul_op)))))
-//             .map(list_to_tree)
-//             .parse(tokens)
-//     }
-
-//     assert_eq!(fn_parser(mul_op).parse(CharsStream::new("18 /  9  * 3 *1")).res.unwrap().calc(),
-//                6);
-
-//     assert_eq!(fn_parser(add_op).parse(CharsStream::new("1+5 /  9  * 3")).res.unwrap(),
-//                Node::Add(Box::new((Node::Num(1),
-//                                    Node::Mul(Box::new((Node::Div(Box::new((Node::Num(5),
-//                                                                            Node::Num(9)))),
-//                                                        Node::Num(3))))))));
-
-//     assert_eq!(fn_parser(add_op)
-//                    .parse(CharsStream::new("5+ 16 /  (9 + 5 * (2 - (7))) + (40) /10 *2-6*9/3*(7-5)+6/2"))
-//                    .res
-//                    .unwrap()
-//                    .calc(), -21);
-// }
-
-
- 

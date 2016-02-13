@@ -5,6 +5,7 @@ use prs::pars::Token;
 use prs::stream::char_stream::CharStream;
 use prs::stream::TokenStream;
 use prs::result::ParseErr::Expected;
+use prs::result::ParseErr;
 use prs::comb::ParserComb;
 use prs::comb::ParserCombDynamic;
 use prs::pars::Parse;
@@ -106,6 +107,23 @@ fn and_test() {
     let input = &mut CharStream::new("xyy");
     assert_eq!(x_and_y.parse(input), Err(Expected('z')));
     assert_eq!(input.peek(), Some('x'));
+}
+
+
+use prs::comb::Pair;
+#[test]
+fn and_dyn_test() {
+    let x_and_y = Pair(Box::new(Token('x')), Box::new(Token('y')));
+
+    assert_eq!(x_and_y.parse(&mut CharStream::new("xyxy")), Ok(('x', 'y')));
+
+    // let input = &mut CharStream::new("z");
+    // assert_eq!(x_and_y.parse(input), Err(Expected('x')));
+    // assert_eq!(input.peek(), Some('z'));
+
+    // let input = &mut CharStream::new("xz");
+    // assert_eq!(x_and_y.parse(input), Err(Expected('y')));
+    // assert_eq!(input.peek(), Some('x'));
 }
 
 #[test]

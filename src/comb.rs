@@ -245,6 +245,31 @@ macro_rules! impl_tup {
 impl_tup!(a,b);
 impl_tup!(a,b,c);
 
+
+pub struct Pair<I, E, O1, O2>(pub Box<Parse<Input=I,Output=O1,Error=E>>, 
+                                pub Box<Parse<Input=I,Output=O2,Error=E>>,);
+
+impl<I, E, O1, O2> Parse for Pair<I, E, O1, O2>
+where I: SavableStream,
+{
+    type Input = I;
+    type Output = (O1,O2);
+    type Error = E;
+    fn parse(&self, tokens: &mut Self::Input) -> Result<Self::Output, Self::Error> {
+
+        let save = tokens.save();
+        Ok((
+            match self.0.parse(tokens) {
+                Ok(res) => res,
+                Err(e) => { tokens.restore(save); return Err(e); }
+            },
+            match self.1.parse(tokens) {
+                Ok(res) => res,
+                Err(e) => { tokens.restore(save); return Err(e); }
+            },
+        ))
+    }
+}
 // ----------------------------------------- AnyToken ------------------------------------------
 
 
@@ -292,9 +317,9 @@ impl<'a, P> ParserCombDynamic<'a> for P
 pub trait ParserComb: Parse
 where Self: Sized  {
     
-    fn static_or<P: Parse>(self, parser: P) -> Or<Self, P> {
-        Or(self, parser)
-    }
+    // fn static_or<P: Parse>(self, parser: P) -> Or<Self, P> {
+    //     Or(self, parser)
+    // }
 
     fn then<F, B>(self, f: F) -> Then<Self, F>
     where F: Fn(Self::Output) -> B {
