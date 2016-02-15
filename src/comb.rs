@@ -9,8 +9,10 @@ use std::marker::PhantomData;
 use stream::SavableStream;
 
 
+pub type ParseTrait<'a, I, O, E> = Parse<Input=I, Output=O, Error=E> + 'a;
+
 // --------------------------------------------- Nop ---------------------------------------------
-pub struct Nop<I, E>(PhantomData<I>,PhantomData<E>);
+pub struct Nop<I, E>(PhantomData<I>, PhantomData<E>);
 // where  P: Parse, F: Fn(P::Output) -> R
 
 impl<I, E> Parse for Nop<I, E>
@@ -143,7 +145,7 @@ pub struct Skip<P1, P2>(P1,P2);
 impl<P1, P2, I, E> Parse for Skip<P1, P2>
 where I: SavableStream,
     P1: Parse<Input=I, Error=E>,
-    P2: Parse<Input=I, Error=E>,
+    P2: Parse<Input=I, Error=E>
 {
     type Input = I;
     type Output = P1::Output;
@@ -157,7 +159,7 @@ pub struct SkipAny<P1, P2>(P1,P2);
 impl<P1, P2, I, E> Parse for SkipAny<P1, P2>
 where I: SavableStream,
     P1: Parse<Input=I, Error=E>,
-    P2: Parse<Input=I>,
+    P2: Parse<Input=I>
 {
     type Input = I;
     type Output = P1::Output;
@@ -169,11 +171,9 @@ where I: SavableStream,
             parser: &self.1,
             input: tokens
         };
-
         // for _ in 0..0 {
             // try!(it.parse_borrowed());
         // }
-
         it.count();
         Ok(res)
     }
@@ -207,7 +207,6 @@ where P: Parse<Input=I>,
 // ----------------------------------------- Maybe ------------------------------------------
 pub struct Maybe<P>(P);
 
-
 impl<P> Parse for Maybe<P>
     where P: Parse, 
 {
@@ -221,7 +220,7 @@ impl<P> Parse for Maybe<P>
 
 macro_rules! impl_tup {
     ($($t:ident),*) => (   
-        #[allow(non_camel_case_types)] 
+        #[allow(non_camel_case_types)]
         impl<$($t,)* I, E> Parse for ($($t,)*) 
         where I: SavableStream,
             $($t: Parse<Input=I, Error=E>,)*
@@ -246,14 +245,14 @@ impl_tup!(a,b);
 impl_tup!(a,b,c);
 
 
-pub struct Pair<I, E, O1, O2>(pub Box<Parse<Input=I,Output=O1,Error=E>>, 
-                                pub Box<Parse<Input=I,Output=O2,Error=E>>,);
+pub struct Pair<'a, I, E, O1, O2>(pub Box<ParseTrait<'a, I, O1, E>>, 
+                                  pub Box<ParseTrait<'a, I, O2, E>>,);
 
-impl<I, E, O1, O2> Parse for Pair<I, E, O1, O2>
+impl<'a, I, E, O1, O2> Parse for Pair<'a, I, E, O1, O2>
 where I: SavableStream,
 {
     type Input = I;
-    type Output = (O1,O2);
+    type Output = (O1, O2);
     type Error = E;
     fn parse(&self, tokens: &mut Self::Input) -> Result<Self::Output, Self::Error> {
 
@@ -270,18 +269,14 @@ where I: SavableStream,
         ))
     }
 }
-// ----------------------------------------- AnyToken ------------------------------------------
 
-
-//
-// ----------------------------------------- Constructor ------------------------------------------
 
 pub struct DynamicOr<'a, R, T, E1, E2>(
-        Box<Parse<Input=T, Output = R, Error=E1> + 'a>,
-        Box<Parse<Input=T, Output = R, Error=E2> + 'a>);
+        Box<ParseTrait<'a, T, R, E1>>,
+        Box<ParseTrait<'a, T, R, E2>>);
 
 impl<'a, R, T, E1, E2> Parse for DynamicOr<'a, R, T, E1, E2>
-    where T: TokenStream
+    where T: TokenStream,
 {
     type Input = T;
     type Output = R;
@@ -300,6 +295,7 @@ impl<'a, R, T, E1, E2> Parse for DynamicOr<'a, R, T, E1, E2>
     }
 }
 
+// ----------------------------------------- Constructor ------------------------------------------
 pub trait ParserCombDynamic<'a>: Parse
 where Self: Sized + 'a  {
 
@@ -346,6 +342,10 @@ where Self: Sized  {
 
     fn on_err<E>(self, err: E) -> OnError<Self, E> {
         OnError(self, err)
+    }
+
+    fn supress_err(self) -> OnError<Self, ()> {
+        OnError(self, ())
     }
 }
 

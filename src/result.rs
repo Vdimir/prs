@@ -5,8 +5,3 @@ pub enum ParseErr<E> {
     Expected(E),
     Complex(Box<ParseErr<E>>, Box<ParseErr<E>>)
 }
-// #[derive(PartialEq, Debug)]
-// pub struct Found<T>(pub T);
-
-// #[derive(PartialEq, Debug)]
-// pub struct ExpectedButFound<E, F>(pub Option<E>, pub Option<F>);

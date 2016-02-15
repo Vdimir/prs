@@ -1,21 +1,14 @@
+
+#![feature(box_patterns)]
+
 extern crate prs;
 
-use prs::pars::Token;
-use prs::stream::char_stream::CharStream;
+use prs::pars::{Token, Parse, predicate, fn_parser};
 use prs::stream::TokenStream;
-use prs::stream::SavableStream;
-use prs::comb::ParserComb;
-use prs::comb::nop;
-use prs::comb::eof;
-use prs::comb::ParserCombDynamic;
-use prs::pars::Parse;
-use prs::pars::predicate;
-use prs::pars::fn_parser;
-use prs::comb::many;
-use prs::comb::maybe;
-// use prs::result::ParseErr;
-use prs::comb::Pair;
-
+use prs::stream::char_stream::CharStream;
+use prs::stream::vec_stream::VecStream;
+use prs::comb::{ParserComb,  ParserCombDynamic};
+use prs::comb::{eof, many, maybe};
 
 
 #[derive(PartialEq, Debug, Clone)]
@@ -50,36 +43,33 @@ impl ExprToken {
 fn tokenize(input: &str) -> Result<Vec<ExprToken>, ()> {
     let stream = &mut CharStream::new(input);
 
-    fn parse_op<S>(s: &mut S) -> Result<ExprToken, ()>
-    where S: TokenStream<Token=char>,
-    {
+    let op_symb = Token('+').then(|_| ExprToken::Add)
+                  .or(Token('-').then(|_| ExprToken::Sub)
+                  .or(Token('*').then(|_| ExprToken::Mul)))
+                  .or(Token('/').then(|_| ExprToken::Div));
 
-        let opt_res = s.peek().and_then(|c| 
-            match c {
-                '+' => Some(ExprToken::Add),
-                '-' => Some(ExprToken::Sub),
-                '*' => Some(ExprToken::Mul),
-                '/' => Some(ExprToken::Div),
-                _ => None,
-            });
+    // fn parse_op<S>(s: &mut S) -> Result<ExprToken, ()>
+    // where S: TokenStream<Token=char>,
+    // {
+    //     let opt_res = s.peek().and_then(|c| 
+    //         match c {
+    //             '+' => Some(ExprToken::Add),
+    //             '-' => Some(ExprToken::Sub),
+    //             '*' => Some(ExprToken::Mul),
+    //             '/' => Some(ExprToken::Div),
+    //             _ => None,
+    //         });
+    //     opt_res
+    //     .into_iter()
+    //     .inspect(|_| {s.next();})
+    //     .next()
+    //     .ok_or(())
+    // }
 
-        opt_res
-        .into_iter()
-        .inspect(|_| {s.next();})
-        .next()
-        .ok_or(())
-    }
-
-    let op_symb = fn_parser(parse_op);
-
-    // let op_symb = Token('+').then(|_| OpToken::Add)
-    //               .or(Token('-').then(|_| OpToken::Sub)
-    //               .or(Token('*').then(|_| OpToken::Mul)))
-    //               .or(Token('/').then(|_| OpToken::Div))
-    //               .then(|t| ExprToken::Op(t));
+    // let op_symb = fn_parser(parse_op);
 
     let paren = Token('(').then(|_| ExprToken::LParen)
-        .or(Token(')').then(|_| ExprToken::RParen));
+                .or(Token(')').then(|_| ExprToken::RParen));
 
     let digit = predicate(|c: &char| c.is_digit(10));
 
@@ -90,9 +80,9 @@ fn tokenize(input: &str) -> Result<Vec<ExprToken>, ()> {
     let alph = predicate(|c: &char| c.is_alphabetic());
     let alph_num = predicate(|c: &char| c.is_alphanumeric());
 
-    // alloc overhead
     let iden = (alph, maybe(many(alph_num)))
                 .then(|(c, v): (char, Option<Vec<_>>)| {
+                    // alloc overhead
                     ExprToken::Iden(
                         Some(c)
                         .into_iter()
@@ -105,13 +95,12 @@ fn tokenize(input: &str) -> Result<Vec<ExprToken>, ()> {
 
     let ws = Token(' ').then(|_| ExprToken::None);
 
-    let lexer = //(nop().skip_any(&ws),
-        many(op_symb
+    let lexer = many(op_symb
                 .or(num)
                 .or(iden)
                 .or(paren)
                 .skip_any(&ws))
-        .on_err(())
+        .supress_err()
         .skip(eof());
             
     return lexer.parse(stream);
@@ -119,15 +108,16 @@ fn tokenize(input: &str) -> Result<Vec<ExprToken>, ()> {
 
 #[test]
 fn tokenize_test() {
+    use ExprToken::*;
 
     assert_eq!(tokenize("150  +( foo12 ) * a "), Ok(vec![
-            ExprToken::Num(150),
-            ExprToken::Add,
-            ExprToken::LParen,
-            ExprToken::Iden("foo12".to_owned()),
-            ExprToken::RParen,
-            ExprToken::Mul,
-            ExprToken::Iden("a".to_owned()),
+            Num(150),
+            Add,
+            LParen,
+            Iden("foo12".to_owned()),
+            RParen,
+            Mul,
+            Iden("a".to_owned()),
         ]));
 
     assert!(tokenize("150 % 2").is_err());
@@ -143,7 +133,6 @@ enum Node {
 }
 
 impl Node {
-    
     fn create_op(op: ExprToken, lhs: Node, rhs: Node) -> Self {
         match op {
             ExprToken::Add => Node::Add(Box::new((lhs, rhs))),
@@ -154,15 +143,24 @@ impl Node {
         }
     }
 
+    fn calc(&self) -> u32 {
+        use Node::*;
+
+        match *self {
+            Num(n) => n,
+            Add(box (ref a, ref b)) => a.calc() + b.calc(),
+            Sub(ref pair) => pair.0.calc() - pair.1.calc(),
+            Mul(ref pair) => pair.0.calc() * pair.1.calc(),
+            Div(ref pair) => pair.0.calc() / pair.1.calc(),
+        }
+    }
 }
 
-use prs::stream::vec_stream::VecStream;
 fn parse_expr(s: &str) -> Result<Node, ()> {
 
     let tokens = &mut VecStream::new(tokenize(s).unwrap());
 
     fn num_p(s: &mut VecStream<ExprToken>) -> Result<Node, ()>
-    // where S: TokenStream<Token=ExprToken>,
     {
         if let Some(ExprToken::Num(n)) = s.peek() {
             s.next();
@@ -172,87 +170,95 @@ fn parse_expr(s: &str) -> Result<Node, ()> {
         }
     }
 
-    fn expression(s: &mut VecStream<ExprToken>) -> Result<Node, ()>
-    // where S: SavableStream<Token=ExprToken>,
-    {
-        fn list_to_tree((mut f, r): (Node, Option<Vec<(ExprToken, Node)>>)) -> Node {
-            for (op, rh) in r.unwrap_or(Vec::new()).into_iter() {
-                f = Node::create_op(op, f, rh);
-            }
-            f
+    fn list_to_tree((mut f, r): (Node, Option<Vec<(ExprToken, Node)>>)) -> Node {
+        for (op, rh) in r.unwrap_or(Vec::new()).into_iter() {
+            f = Node::create_op(op, f, rh);
         }
-
-
-        // let factor = ;
-
-        fn fac(s: &mut VecStream<ExprToken>) -> Result<Node, ()> {
-
-            let num = fn_parser(num_p);
-            let parens_exp = 
-                (Token(ExprToken::LParen).on_err(()),
-                fn_parser(expression),
-                Token(ExprToken::RParen).on_err(()))
-                .then(|(_, e, _)| e);
-            num.or(parens_exp).on_err(()).parse(s)
-        }
-
-
-        let inf_mul = (fn_parser(fac), maybe(many((
-            predicate(|t: &ExprToken| t.is_mul_op()),
-            fn_parser(fac))
-        )))
-        .then(list_to_tree);
-
-        let inf_mul0= (fn_parser(fac), maybe(many((
-            predicate(|t: &ExprToken| t.is_mul_op()),
-            fn_parser(fac))
-        )))
-        .then(list_to_tree);
-
-        let inf_add = Pair
-        (Box::new(inf_mul), Box::new(maybe(many(
-           Pair(Box::new(predicate(|t: &ExprToken| t.is_add_op())),
-           Box::new(inf_mul0))
-        ))))
-        .then(list_to_tree);
-
-        let expr_parser = inf_add;
-        // let expr_parser = inf_mul;
-        expr_parser.parse(s)
-        // Err(())
+        f
     }
 
-    (fn_parser(expression), eof())
-                    .then(|(d,_)| d)
-                    .parse(tokens)
+    fn fac(s: &mut VecStream<ExprToken>) -> Result<Node, ()> {
+        use ExprToken::*;
+        
+        let num = fn_parser(num_p);
+
+        let parens_exp = 
+            (Token(LParen).supress_err(),
+            fn_parser(expression),
+            Token(RParen).supress_err())
+            .then(|(_, e, _)| e);
+
+        num.or(parens_exp).supress_err().parse(s)
+    }
+
+    fn inf_mul_f(s: &mut VecStream<ExprToken>) -> Result<Node, ()> {
+        let factor = fn_parser(fac);
+        let op_symb = predicate(|t: &ExprToken| t.is_mul_op());
+
+        (&factor, maybe(many((op_symb, &factor))))
+        .then(list_to_tree)
+        .parse(s)
+    }
+
+    fn expression(s: &mut VecStream<ExprToken>) -> Result<Node, ()>
+    {
+        let inf_mul = fn_parser(inf_mul_f);
+
+        // let inf_add = Pair
+        // (Box::new(&inf_mul),
+        //     Box::new(maybe(many(
+        //         Pair(Box::new(predicate(|t: &ExprToken| t.is_add_op())),
+        //         Box::new(&inf_mul))
+        // ))))
+        // .then(list_to_tree);
+
+        let add_symb = predicate(|t: &ExprToken| t.is_add_op());
+
+        let expr_parser = (&inf_mul, maybe(many((add_symb, &inf_mul))))
+                    .then(list_to_tree);
+
+        expr_parser.parse(s)
+    }
+
+    fn_parser(expression).skip(eof())
+    .parse(tokens)
 }
 
 #[test]
 fn expr_test() {
+    use Node::*;
 
+    fn pair(a: Node, b: Node) -> Box<(Node, Node)> {
+        Box::new((a, b))
+    }
 
-    assert_eq!(parse_expr("3"), Ok(Node::Num(3)));
+    assert_eq!(parse_expr("3"), Ok(Num(3)));
 
     assert_eq!(parse_expr("(1*2)*3"), Ok(
-        Node::Mul(Box::new(
-            (Node::Mul(Box::new(
-                (Node::Num(1), Node::Num(2)))),
-            Node::Num(3))
-            ))));
+        Mul(pair(
+            Mul(pair(Num(1),
+                     Num(2))),
+            Num(3)))));
 
     assert_eq!(parse_expr("1+2*3"), Ok(
-        Node::Add(
-            Box::new((
-                Node::Num(1),
-                Node::Mul(
-                    Box::new((Node::Num(2),Node::Num(3))))
-            )))));
-
+        Add(pair(
+                Num(1),
+                Mul(pair(Num(2),
+                         Num(3)))))));
 
     assert_eq!(parse_expr("1+5 /  9  * 3"), Ok(
-               Node::Add(Box::new((Node::Num(1),
-                       Node::Mul(Box::new((Node::Div(Box::new((Node::Num(5),
-                                           Node::Num(9)))),
-                       Node::Num(3)))))))));
+               Add(pair(Num(1),
+                        Mul(pair(
+                            Div(pair(Num(5),
+                                     Num(9))),
+                            Num(3)))))));
 
+    let ast = parse_expr("5+8/4+3*(9+4-2*3)-((2+3))-8+(2+3)").unwrap();
+    assert_eq!(ast.calc(), 20);
+
+    assert_eq!(parse_expr("(3").ok(), None);
+    assert_eq!(parse_expr("1+5 9").ok(), None);
+    assert_eq!(parse_expr("+").ok(), None);
+    assert_eq!(parse_expr("5+*3").ok(), None);
+    assert_eq!(parse_expr("-9").ok(), None);
 }
