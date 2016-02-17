@@ -12,6 +12,7 @@ use prs::pars::Parse;
 use prs::pars::predicate;
 use prs::comb::many;
 use prs::comb::maybe;
+use prs::comb::Pair;
 
 
 #[test]
@@ -109,21 +110,15 @@ fn and_test() {
     assert_eq!(input.peek(), Some('x'));
 }
 
-
-use prs::comb::Pair;
 #[test]
 fn and_dyn_test() {
     let x_and_y = Pair(Box::new(Token('x')), Box::new(Token('y')));
 
     assert_eq!(x_and_y.parse(&mut CharStream::new("xyxy")), Ok(('x', 'y')));
 
-    // let input = &mut CharStream::new("z");
-    // assert_eq!(x_and_y.parse(input), Err(Expected('x')));
-    // assert_eq!(input.peek(), Some('z'));
-
-    // let input = &mut CharStream::new("xz");
-    // assert_eq!(x_and_y.parse(input), Err(Expected('y')));
-    // assert_eq!(input.peek(), Some('x'));
+    let input = &mut CharStream::new("z");
+    assert_eq!(x_and_y.parse(input), Err(Expected('x')));
+    assert_eq!(input.peek(), Some('z'));
 }
 
 #[test]
@@ -144,5 +139,4 @@ fn skip_many_test() {
     assert_eq!(x_and_y.parse(&mut CharStream::new("xy")), Ok(('x', 'y')));
     assert_eq!(x_and_y.parse(&mut CharStream::new("x y")), Ok(('x', 'y')));
     assert_eq!(x_and_y.parse(&mut CharStream::new("x     y")), Ok(('x', 'y')));
-
 }

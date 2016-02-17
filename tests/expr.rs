@@ -80,14 +80,19 @@ fn tokenize(input: &str) -> Result<Vec<ExprToken>, ()> {
     let alph = predicate(|c: &char| c.is_alphabetic());
     let alph_num = predicate(|c: &char| c.is_alphanumeric());
 
+    // fn iden_p(s: &mut CharStream) -> Result<ExprToken, ()> {
+    // }
+
+    use std::collections::LinkedList;
+
     let iden = (alph, maybe(many(alph_num)))
-                .then(|(c, v): (char, Option<Vec<_>>)| {
+                .then(|(c, v): (char, Option<LinkedList<_>>)| {
                     // alloc overhead
                     ExprToken::Iden(
                         Some(c)
                         .into_iter()
                         .chain(
-                            v.unwrap_or(Vec::new()).into_iter()
+                            v.unwrap_or(LinkedList::new()).into_iter()
                         )
                         .collect()
                     )
@@ -95,11 +100,15 @@ fn tokenize(input: &str) -> Result<Vec<ExprToken>, ()> {
 
     let ws = Token(' ').then(|_| ExprToken::None);
 
-    let lexer = many(op_symb
+    let lexem = op_symb
                 .or(num)
                 .or(iden)
-                .or(paren)
-                .skip_any(&ws))
+                .or(paren);
+
+    let lexer = many(
+        lexem.skip_any(&ws)
+        // (lexem.supress_err(), maybe((ws.many::<Vec<_>>().supress_err()))).then(|(r, _)| r )
+        )
         .supress_err()
         .skip(eof());
             

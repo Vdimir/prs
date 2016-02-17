@@ -25,10 +25,12 @@ fn pred_test() {
     let mut input = CharStream::new("12a");
 
     // let dig = predicate::<_,CharStream,_>("digit",|c| c.is_digit(10));
-    let dig = predicate(|c: &char| c.is_digit(10)).on_err(Expected("digit"));
+    let dig = predicate(|c: &char| c.is_digit(10))
+        .then(|c: char| c.to_digit(10).unwrap())
+        .on_err(Expected("digit"));
 
-    assert_eq!(dig.parse(&mut input), Ok('1'));
-    assert_eq!(dig.parse(&mut input), Ok('2'));
+    assert_eq!(dig.parse(&mut input), Ok(1));
+    assert_eq!(dig.parse(&mut input), Ok(2));
     assert_eq!(dig.parse(&mut input), Err(Expected("digit")));
     assert_eq!(input.peek(), Some('a'));
 }

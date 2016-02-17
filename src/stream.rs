@@ -10,25 +10,41 @@ pub trait TokenStream {
     fn next(&mut self) -> Option<Self::Token>;
 }
 
-// /// Accumulates passed tokens from `TokenStream` and return ranges
-// pub trait TStreamAccumulator: TokenStream {
-//     type Range;
-//     fn take_range(&mut self) -> Self::Range;
-//     fn backtrack_range(&mut self);
-// }
-
-
 pub trait SavableStream: TokenStream {
     type State;
     fn save(&self) -> Self::State;
     fn restore(&mut self, Self::State);
 }
 
+pub trait RangeStream: SavableStream {
+    type Range;
+    /// return range begin from previously saved state end with current state
+    fn range(&self, Self::State) -> Option<Self::Range>;
+}
+
+// /// Accumulates passed tokens from `TokenStream` and return ranges
+// pub struct TokenStreamAccumulator<S: RangeStream> {
+//     stream: S,
+//     pos: S::State,
+// }
+// 
+// impl TokenStreamAccumulator<S: RangeStream> {
+//     fn take_range(&mut self) -> Option<Self::Range> {
+//         let res = self.range(self.pos);
+//         self.pos = self.stream.save()
+//         return res;
+//     }
+// 
+//     fn backtrack_range(&mut self) {
+//         self.stream.restore(self.pos);
+//     }
+// }
+
 
 // ======================================= Implementations ========================================
 
 pub mod char_stream {
-    use super::{ TokenStream, SavableStream };
+    use super::{ TokenStream, SavableStream, RangeStream };
 
     type BytePos = usize;
 
@@ -61,6 +77,17 @@ pub mod char_stream {
             let current_char = self.peek();
             self.position += current_char.map_or(0, |c| c.len_utf8());
             current_char
+        }
+    }
+
+    impl<'a> RangeStream for CharStream<'a> {
+        type Range = &'a str;
+        fn range(&self, state: CharStreamState) -> Option<&'a str> {
+            let end: usize = self.position;
+            match state.0 {
+                beg if beg.le(&end) => Some(&self.source[beg..end]),
+                _ => None,
+            }
         }
     }
 
@@ -122,128 +149,60 @@ pub mod vec_stream {
     }
 }
 
-pub mod lexem_char_stream {
-    
-    use super::TokenStream;
-    type BytePos = usize;
-    type CharPos = usize;
-
-    pub struct CharStream<'a> {
-        source: &'a str,
-
-        lexem_begin_position: BytePos,
-        lookahead_offset: BytePos
-    }
-
-    impl<'a> TokenStream for CharStream<'a> {
-        type Token = char;
-        fn peek(&mut self) -> Option<char> {
-            self.source[self.current_offset()..].chars().next()
-        }
-
-        fn next(&mut self) -> Option<char> {
-            let current_char = self.peek();
-            self.lookahead_offset += current_char.map_or(0, |c| c.len_utf8());
-            current_char
-        }
-    }
-
-    impl<'a> CharStream<'a> {
-        pub fn new(s: &'a str) -> Self {
-            CharStream {
-                source: s,
-                lexem_begin_position: 0,
-                lookahead_offset: 0
-            }
-        }
-
-        pub fn drop_lookahead(&mut self) {
-            self.lookahead_offset = 0;
-        }
-
-        pub fn take_lexem(&mut self) -> &'a str {
-            let beg = self.lexem_begin_position;
-            let end = beg + self.lookahead_offset;
-
-            self.accept_lookahead();
-            &self.source[beg..end]
-        }
-
-        pub fn passed_chars_count(&self) -> usize {
-            self.source[..self.current_offset()].chars().count()
-        }
-
-        pub fn rest(&self) -> &str {
-            &self.source[self.current_offset()..]
-        }
-
-        pub fn eof(&mut self) -> bool {
-            self.peek().is_none()
-        }
-
-        fn accept_lookahead(&mut self) {
-            self.lexem_begin_position += self.lookahead_offset;
-            self.drop_lookahead();
-        }
-
-        fn current_offset(&self) -> BytePos {
-            self.lexem_begin_position + self.lookahead_offset
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
 
-    use super::lexem_char_stream::CharStream;
+    use super::char_stream::CharStream;
     use super::TokenStream;
+    use super::RangeStream;
     #[test]
     fn char_stream_test() {
         let mut stream = CharStream::new("eng_фцч_123");
-        assert_eq!(stream.passed_chars_count(), 0);
+
+        let saved = stream.save();
         assert_eq!(stream.peek(), Some('e'));
-        assert_eq!(stream.passed_chars_count(), 0);
         assert_eq!(stream.next(), Some('e'));
-        assert_eq!(stream.passed_chars_count(), 1);
         assert_eq!(stream.peek(), Some('n'));
         assert_eq!(stream.peek(), Some('n'));
         assert_eq!(stream.next(), Some('n'));
         assert_eq!(stream.next(), Some('g'));
-        assert_eq!(stream.take_lexem(), ("eng"));
-        assert_eq!(stream.passed_chars_count(), 3);
-        assert_eq!(stream.peek(), Some('_'));
-        assert_eq!(stream.take_lexem(), (""));
+        assert_eq!(stream.range(saved), Some("eng"));
+
+        let saved = stream.save();        
         assert_eq!(stream.peek(), Some('_'));
         assert_eq!(stream.next(), Some('_'));
-        assert_eq!(stream.take_lexem(), ("_"));
+        assert_eq!(stream.range(saved), Some("_"));
+
+        let saved = stream.save();
         assert_eq!(stream.peek(), Some('ф'));
         assert_eq!(stream.next(), Some('ф'));
         assert_eq!(stream.next(), Some('ц'));
         assert_eq!(stream.next(), Some('ч'));
-        assert_eq!(stream.passed_chars_count(), 7);
-        stream.drop_lookahead();
-        assert_eq!(stream.passed_chars_count(), 4);
+        stream.restore(saved);
+
+        let saved = stream.save();
+        assert_eq!(stream.range(saved), Some(""));
+
+        let saved = stream.save();
         assert_eq!(stream.peek(), Some('ф'));
         assert_eq!(stream.next(), Some('ф'));
         assert_eq!(stream.next(), Some('ц'));
         assert_eq!(stream.next(), Some('ч'));
-        assert_eq!(stream.take_lexem(), ("фцч"));
+        assert_eq!(stream.peek(), Some('_'));
+        assert_eq!(stream.range(saved), Some("фцч"));
+        
         assert_eq!(stream.next(), Some('_'));
-        assert_eq!(stream.take_lexem(), ("_"));
-        assert_eq!(stream.passed_chars_count(), 8);
+
+        let saved = stream.save();
         assert_eq!(stream.peek(), Some('1'));
         assert_eq!(stream.next(), Some('1'));
         assert_eq!(stream.next(), Some('2'));
         assert_eq!(stream.next(), Some('3'));
-        assert_eq!(stream.take_lexem(), ("123"));
-        assert_eq!(stream.eof(), true);
+        assert_eq!(stream.range(saved), Some("123"));
         assert_eq!(stream.peek(), None);
         assert_eq!(stream.next(), None);
         assert_eq!(stream.next(), None);
-        assert_eq!(stream.passed_chars_count(), 11);
     }
-
-
 
     use super::vec_stream::VecStream;
     use super::SavableStream;

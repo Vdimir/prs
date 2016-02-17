@@ -132,7 +132,7 @@ impl<P, R> Parse for Many<P, R>
             input: tokens
         };
 
-        let first = try!(it.parse_borrowed());
+        let first = try!(it.parse_once());
 
         return Ok(Some(first).into_iter()
                     .chain(it)
@@ -141,19 +141,6 @@ impl<P, R> Parse for Many<P, R>
 }
 
 // -------------------------------------------- Skip ----------------------------------------------
-pub struct Skip<P1, P2>(P1,P2);
-impl<P1, P2, I, E> Parse for Skip<P1, P2>
-where I: SavableStream,
-    P1: Parse<Input=I, Error=E>,
-    P2: Parse<Input=I, Error=E>
-{
-    type Input = I;
-    type Output = P1::Output;
-    type Error = E;
-    fn parse(&self, tokens: &mut Self::Input) -> Result<Self::Output, Self::Error> {
-        (&self.0, &self.1).parse(tokens).map(|(r,_)| r)
-    }
-}
 
 pub struct SkipAny<P1, P2>(P1,P2);
 impl<P1, P2, I, E> Parse for SkipAny<P1, P2>
@@ -167,14 +154,14 @@ where I: SavableStream,
     fn parse(&self, tokens: &mut Self::Input) -> Result<Self::Output, Self::Error> {
         let res = try!(self.0.parse(tokens));
 
-        let it = Iter {
+        let mut it = Iter {
             parser: &self.1,
             input: tokens
         };
         // for _ in 0..0 {
-            // try!(it.parse_borrowed());
+            // try!(it.parse_once());
         // }
-        it.count();
+        while it.next().is_some() {}
         Ok(res)
     }
 }
@@ -188,7 +175,7 @@ impl<'a, P, I: 'a> Iter<'a, P, I>
     where P: Parse<Input=I>,
           I: TokenStream
 {
-    fn parse_borrowed(&mut self) ->  Result<P::Output, P::Error> {
+    fn parse_once(&mut self) ->  Result<P::Output, P::Error> {
         self.parser.parse(self.input)
     }
 }
@@ -326,9 +313,12 @@ where Self: Sized  {
         Many(self, PhantomData)
     }
 
-    fn skip<P>(self, parser: P) -> Skip<Self, P>
-    where P: Parse<Input=Self::Input, Error=Self::Error> {
-        Skip(self, parser)
+    fn skip<P>(self, parser: P) -> Then<(Self, P), fn((Self::Output, P::Output)) -> Self::Output>
+    where P: Parse<Input=Self::Input> {
+        // (self, parser).then(|(r,_)| r)
+        fn first<A,B>(t: (A,B)) -> A { t.0 }
+
+        Then((self, parser), first )
     }
 
     fn skip_any<P>(self, parser: P) -> SkipAny<Self, P>
@@ -349,6 +339,11 @@ where Self: Sized  {
     }
 }
 
+
+fn supress_err<P: Parse>(p: P) -> OnError<P, ()> {
+    OnError(p, ())
+}
+
 pub fn many<P, R>(p: P) -> Many<P, R>{
     Many(p, PhantomData)
 }
@@ -359,5 +354,5 @@ pub fn maybe<P>(p: P) -> Maybe<P>{
 
 
 impl<P> ParserComb for P
-    where P: Parse
+    where P: Parse + Sized
 {}
