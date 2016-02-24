@@ -1,15 +1,14 @@
 
-#![feature(box_patterns)]
+// #![feature(box_patterns)]
 
 extern crate prs;
 
 use prs::pars::{Token, Parse, predicate, fn_parser};
-use prs::stream::TokenStream;
 use prs::stream::char_stream::CharStream;
 use prs::stream::vec_stream::VecStream;
 use prs::comb::{ParserComb,  ParserCombDynamic};
 use prs::comb::{eof, many, maybe};
-
+// use prs::stream::TokenStream;
 
 #[derive(PartialEq, Debug, Clone)]
 enum ExprToken {
@@ -32,6 +31,21 @@ impl ExprToken {
         }
     }
 
+    fn num(&self) -> u32 {
+        match *self {
+            ExprToken::Num(n) => Ok(n),
+            _ => Err("not a number"),
+        }
+        .unwrap()
+    }
+
+    fn is_num(&self) -> bool {
+        match *self {
+            ExprToken::Num(_) => true,
+            _ => false,
+        }
+    }
+
     fn is_add_op(&self) -> bool {
         match *self {
             ExprToken::Add | ExprToken::Sub => true,
@@ -40,6 +54,7 @@ impl ExprToken {
     }
 }
 
+use std::collections::LinkedList;
 fn tokenize(input: &str) -> Result<Vec<ExprToken>, ()> {
     let stream = &mut CharStream::new(input);
 
@@ -51,7 +66,7 @@ fn tokenize(input: &str) -> Result<Vec<ExprToken>, ()> {
     // fn parse_op<S>(s: &mut S) -> Result<ExprToken, ()>
     // where S: TokenStream<Token=char>,
     // {
-    //     let opt_res = s.peek().and_then(|c| 
+    //     let opt_res = s.peek().and_then(|c|
     //         match c {
     //             '+' => Some(ExprToken::Add),
     //             '-' => Some(ExprToken::Sub),
@@ -80,11 +95,6 @@ fn tokenize(input: &str) -> Result<Vec<ExprToken>, ()> {
     let alph = predicate(|c: &char| c.is_alphabetic());
     let alph_num = predicate(|c: &char| c.is_alphanumeric());
 
-    // fn iden_p(s: &mut CharStream) -> Result<ExprToken, ()> {
-    // }
-
-    use std::collections::LinkedList;
-
     let iden = (alph, maybe(many(alph_num)))
                 .then(|(c, v): (char, Option<LinkedList<_>>)| {
                     // alloc overhead
@@ -98,7 +108,7 @@ fn tokenize(input: &str) -> Result<Vec<ExprToken>, ()> {
                     )
                 });
 
-    let ws = Token(' ').then(|_| ExprToken::None);
+    let ws = Token(' ');
 
     let lexem = op_symb
                 .or(num)
@@ -111,7 +121,7 @@ fn tokenize(input: &str) -> Result<Vec<ExprToken>, ()> {
         )
         .supress_err()
         .skip(eof());
-            
+
     return lexer.parse(stream);
 }
 
@@ -132,13 +142,15 @@ fn tokenize_test() {
     assert!(tokenize("150 % 2").is_err());
 }
 
+type BoxPair<T> = Box<(T, T)>;
+
 #[derive(PartialEq, Debug)]
 enum Node {
     Num(u32),
-    Add(Box<(Node, Node)>),
-    Sub(Box<(Node, Node)>),
-    Mul(Box<(Node, Node)>),
-    Div(Box<(Node, Node)>),
+    Add(BoxPair<Node>),
+    Sub(BoxPair<Node>),
+    Mul(BoxPair<Node>),
+    Div(BoxPair<Node>),
 }
 
 impl Node {
@@ -157,7 +169,9 @@ impl Node {
 
         match *self {
             Num(n) => n,
-            Add(box (ref a, ref b)) => a.calc() + b.calc(),
+            // with box_pattern:
+            // Add(box (ref a, ref b)) => a.calc() + b.calc(),
+            Add(ref pair) => pair.0.calc() + pair.1.calc(),
             Sub(ref pair) => pair.0.calc() - pair.1.calc(),
             Mul(ref pair) => pair.0.calc() * pair.1.calc(),
             Div(ref pair) => pair.0.calc() / pair.1.calc(),
@@ -166,32 +180,26 @@ impl Node {
 }
 
 fn parse_expr(s: &str) -> Result<Node, ()> {
-
     let tokens = &mut VecStream::new(tokenize(s).unwrap());
 
-    fn num_p(s: &mut VecStream<ExprToken>) -> Result<Node, ()>
-    {
-        if let Some(ExprToken::Num(n)) = s.peek() {
-            s.next();
-            Ok(Node::Num(n))
-        } else {
-            Err(())
-        }
-    }
+    // fn num_p(s: &mut VecStream<ExprToken>) -> Result<Node, ()>
+    // {
+    //     if let Some(ExprToken::Num(n)) = s.peek() {
+    //         s.next();
+    //         Ok(Node::Num(n))
+    //     } else {
+    //         Err(())
+    //     }
+    // }
 
-    fn list_to_tree((mut f, r): (Node, Option<Vec<(ExprToken, Node)>>)) -> Node {
-        for (op, rh) in r.unwrap_or(Vec::new()).into_iter() {
-            f = Node::create_op(op, f, rh);
-        }
-        f
-    }
-
-    fn fac(s: &mut VecStream<ExprToken>) -> Result<Node, ()> {
+    fn factor_p(s: &mut VecStream<ExprToken>) -> Result<Node, ()> {
         use ExprToken::*;
-        
-        let num = fn_parser(num_p);
 
-        let parens_exp = 
+        // let num = fn_parser(num_p);
+        let num = predicate(|t: &ExprToken| t.is_num())
+                    .then(|t: ExprToken| Node::Num(t.num()) );
+
+        let parens_exp =
             (Token(LParen).supress_err(),
             fn_parser(expression),
             Token(RParen).supress_err())
@@ -200,8 +208,15 @@ fn parse_expr(s: &str) -> Result<Node, ()> {
         num.or(parens_exp).supress_err().parse(s)
     }
 
+    fn list_to_tree((mut node, rest): (Node, Option<Vec<(ExprToken, Node)>>)) -> Node {
+        for (op, rh) in rest .unwrap_or(vec![]) .into_iter() {
+            node = Node::create_op(op, node, rh);
+        }
+        node
+    }
+
     fn inf_mul_f(s: &mut VecStream<ExprToken>) -> Result<Node, ()> {
-        let factor = fn_parser(fac);
+        let factor = fn_parser(factor_p);
         let op_symb = predicate(|t: &ExprToken| t.is_mul_op());
 
         (&factor, maybe(many((op_symb, &factor))))
@@ -212,24 +227,15 @@ fn parse_expr(s: &str) -> Result<Node, ()> {
     fn expression(s: &mut VecStream<ExprToken>) -> Result<Node, ()>
     {
         let inf_mul = fn_parser(inf_mul_f);
-
-        // let inf_add = Pair
-        // (Box::new(&inf_mul),
-        //     Box::new(maybe(many(
-        //         Pair(Box::new(predicate(|t: &ExprToken| t.is_add_op())),
-        //         Box::new(&inf_mul))
-        // ))))
-        // .then(list_to_tree);
-
         let add_symb = predicate(|t: &ExprToken| t.is_add_op());
-
-        let expr_parser = (&inf_mul, maybe(many((add_symb, &inf_mul))))
+        let expr_parser = (&inf_mul, (add_symb, &inf_mul)
+                                               .many().maybe())
                     .then(list_to_tree);
-
         expr_parser.parse(s)
     }
 
-    fn_parser(expression).skip(eof())
+    fn_parser(expression)
+    .skip(eof())
     .parse(tokens)
 }
 
@@ -271,3 +277,4 @@ fn expr_test() {
     assert_eq!(parse_expr("5+*3").ok(), None);
     assert_eq!(parse_expr("-9").ok(), None);
 }
+

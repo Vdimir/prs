@@ -1,13 +1,11 @@
 // // *
 // // * Module to combinate two or more parsers in different way 
 // // *
-
 use pars::Parse;
 use stream::TokenStream;
 use std::iter::FromIterator;
 use std::marker::PhantomData;
 use stream::SavableStream;
-
 
 pub type ParseTrait<'a, I, O, E> = Parse<Input=I, Output=O, Error=E> + 'a;
 
@@ -206,9 +204,9 @@ impl<P> Parse for Maybe<P>
 }
 
 macro_rules! impl_tup {
-    ($($t:ident),*) => (   
+    ($($t:ident),*) => (
         #[allow(non_camel_case_types)]
-        impl<$($t,)* I, E> Parse for ($($t,)*) 
+        impl<$($t,)* I, E> Parse for ($($t,)*)
         where I: SavableStream,
             $($t: Parse<Input=I, Error=E>,)*
         {
@@ -232,7 +230,7 @@ impl_tup!(a,b);
 impl_tup!(a,b,c);
 
 
-pub struct Pair<'a, I, E, O1, O2>(pub Box<ParseTrait<'a, I, O1, E>>, 
+pub struct Pair<'a, I, E, O1, O2>(pub Box<ParseTrait<'a, I, O1, E>>,
                                   pub Box<ParseTrait<'a, I, O2, E>>,);
 
 impl<'a, I, E, O1, O2> Parse for Pair<'a, I, E, O1, O2>
@@ -340,10 +338,6 @@ where Self: Sized  {
 }
 
 
-fn supress_err<P: Parse>(p: P) -> OnError<P, ()> {
-    OnError(p, ())
-}
-
 pub fn many<P, R>(p: P) -> Many<P, R>{
     Many(p, PhantomData)
 }
@@ -356,3 +350,4 @@ pub fn maybe<P>(p: P) -> Maybe<P>{
 impl<P> ParserComb for P
     where P: Parse + Sized
 {}
+

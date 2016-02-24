@@ -5,7 +5,6 @@ use prs::pars::Token;
 use prs::stream::char_stream::CharStream;
 use prs::stream::TokenStream;
 use prs::result::ParseErr::Expected;
-use prs::result::ParseErr;
 use prs::comb::ParserComb;
 use prs::comb::ParserCombDynamic;
 use prs::pars::Parse;
@@ -58,7 +57,7 @@ fn many_comb_test() {
                 .on_err(Expected("digit"))
                 .many()
                 .then(|s: String| s.parse::<u32>().unwrap());
-                
+
     assert_eq!(dig.parse(&mut CharStream::new("123")), Ok(123));
 }
 
