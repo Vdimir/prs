@@ -9,7 +9,7 @@ use prs::stream::vec_stream::VecStream;
 use prs::comb::{ParserComb,  ParserCombDynamic};
 use prs::comb::{eof, many, maybe};
 use prs::result::ParseErr;
-// use prs::stream::TokenStream;
+use prs::stream::TokenStream;
 
 #[derive(PartialEq, Debug, Clone)]
 enum ExprToken {
@@ -73,23 +73,31 @@ fn tokenize(input: &str) -> Result<Vec<ExprToken>, ParseErr<char>> {
                 .then(|s: String| ExprToken::Num(s.parse::<u32>().unwrap()));
 
 
-    let alph = predicate(|c: &char| c.is_alphabetic());
-    let alph_num = predicate(|c: &char| c.is_alphanumeric());
 
-    let iden = (alph, maybe(many(alph_num)))
-                .then(|(c, v): (char, Option<LinkedList<_>>)| {
-                    // alloc overhead
-                    ExprToken::Iden(
-                        Some(c)
-                        .into_iter()
-                        .chain(
-                            v.unwrap_or(LinkedList::new()).into_iter()
-                        )
-                        .collect()
-                    )
-                });
+    fn alphabetic(c: char) -> Option<char> {
+        if c.is_alphabetic() { Some(c) } else { None }
+    }
 
-    let ws = Token(' ');
+    fn alphanumeric(c: char) -> Option<char> {
+        if c.is_alphanumeric() { Some(c) } else { None }
+    }
+
+    fn iden_f(input: &mut CharStream) -> Result<ExprToken, ParseErr<char>> {
+        if let Some(alph) = input.peek().and_then(|c| alphabetic(c)) {
+            let mut res = String::new();
+            while let Some(alph) = input.peek().and_then(|c| alphanumeric(c)) {
+                res.push(alph);
+                input.next();
+            }
+            Ok(ExprToken::Iden(res))
+        } else {
+            Err(ParseErr::unexpected(input.peek()))
+        }
+
+    }
+    let iden = fn_parser(iden_f);
+
+    //let ws = Token(' ');
 
     let lexem = op_symb
                 .or(num)
@@ -97,8 +105,7 @@ fn tokenize(input: &str) -> Result<Vec<ExprToken>, ParseErr<char>> {
                 .or(paren);
 
     let lexer = many(
-        lexem.skip_any(&ws)
-        // (lexem.supress_err(), maybe((ws.many::<Vec<_>>().supress_err()))).then(|(r, _)| r )
+        lexem.skip_any(Token(' '))
         )
         .skip(eof());
 

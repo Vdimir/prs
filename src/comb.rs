@@ -346,7 +346,6 @@ where I: SavableStream,
     type Output = (O1, O2);
     type Error = E;
     fn parse(&self, tokens: &mut Self::Input) -> Result<Self::Output, Self::Error> {
-
         let save = tokens.save();
         Ok((
             match self.0.parse(tokens) {

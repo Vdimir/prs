@@ -3,7 +3,7 @@ while true; do
     clear
     if [ $1 = "test" ]
     then
-        cargo test
+        time cargo test
     fi
 
     if [ $? = 0 ]
