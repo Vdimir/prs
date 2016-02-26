@@ -8,6 +8,7 @@ use prs::stream::char_stream::CharStream;
 use prs::stream::vec_stream::VecStream;
 use prs::comb::{ParserComb,  ParserCombDynamic};
 use prs::comb::{eof, many, maybe};
+use prs::result::ParseErr;
 // use prs::stream::TokenStream;
 
 #[derive(PartialEq, Debug, Clone)]
@@ -55,33 +56,13 @@ impl ExprToken {
 }
 
 use std::collections::LinkedList;
-fn tokenize(input: &str) -> Result<Vec<ExprToken>, ()> {
+fn tokenize(input: &str) -> Result<Vec<ExprToken>, ParseErr<char>> {
     let stream = &mut CharStream::new(input);
 
     let op_symb = Token('+').then(|_| ExprToken::Add)
                   .or(Token('-').then(|_| ExprToken::Sub)
                   .or(Token('*').then(|_| ExprToken::Mul)))
                   .or(Token('/').then(|_| ExprToken::Div));
-
-    // fn parse_op<S>(s: &mut S) -> Result<ExprToken, ()>
-    // where S: TokenStream<Token=char>,
-    // {
-    //     let opt_res = s.peek().and_then(|c|
-    //         match c {
-    //             '+' => Some(ExprToken::Add),
-    //             '-' => Some(ExprToken::Sub),
-    //             '*' => Some(ExprToken::Mul),
-    //             '/' => Some(ExprToken::Div),
-    //             _ => None,
-    //         });
-    //     opt_res
-    //     .into_iter()
-    //     .inspect(|_| {s.next();})
-    //     .next()
-    //     .ok_or(())
-    // }
-
-    // let op_symb = fn_parser(parse_op);
 
     let paren = Token('(').then(|_| ExprToken::LParen)
                 .or(Token(')').then(|_| ExprToken::RParen));
@@ -119,7 +100,6 @@ fn tokenize(input: &str) -> Result<Vec<ExprToken>, ()> {
         lexem.skip_any(&ws)
         // (lexem.supress_err(), maybe((ws.many::<Vec<_>>().supress_err()))).then(|(r, _)| r )
         )
-        .supress_err()
         .skip(eof());
 
     return lexer.parse(stream);
@@ -179,33 +159,22 @@ impl Node {
     }
 }
 
-fn parse_expr(s: &str) -> Result<Node, ()> {
+fn parse_expr(s: &str) -> Result<Node, ParseErr<ExprToken>> {
     let tokens = &mut VecStream::new(tokenize(s).unwrap());
 
-    // fn num_p(s: &mut VecStream<ExprToken>) -> Result<Node, ()>
-    // {
-    //     if let Some(ExprToken::Num(n)) = s.peek() {
-    //         s.next();
-    //         Ok(Node::Num(n))
-    //     } else {
-    //         Err(())
-    //     }
-    // }
-
-    fn factor_p(s: &mut VecStream<ExprToken>) -> Result<Node, ()> {
+    fn factor_p(s: &mut VecStream<ExprToken>) -> Result<Node, ParseErr<ExprToken>> {
         use ExprToken::*;
 
-        // let num = fn_parser(num_p);
         let num = predicate(|t: &ExprToken| t.is_num())
                     .then(|t: ExprToken| Node::Num(t.num()) );
 
         let parens_exp =
-            (Token(LParen).supress_err(),
+            (Token(LParen),
             fn_parser(expression),
-            Token(RParen).supress_err())
+            Token(RParen))
             .then(|(_, e, _)| e);
 
-        num.or(parens_exp).supress_err().parse(s)
+        num.or(parens_exp).parse(s)
     }
 
     fn list_to_tree((mut node, rest): (Node, Option<Vec<(ExprToken, Node)>>)) -> Node {
@@ -215,7 +184,7 @@ fn parse_expr(s: &str) -> Result<Node, ()> {
         node
     }
 
-    fn inf_mul_f(s: &mut VecStream<ExprToken>) -> Result<Node, ()> {
+    fn inf_mul_f(s: &mut VecStream<ExprToken>) -> Result<Node, ParseErr<ExprToken>> {
         let factor = fn_parser(factor_p);
         let op_symb = predicate(|t: &ExprToken| t.is_mul_op());
 
@@ -224,7 +193,7 @@ fn parse_expr(s: &str) -> Result<Node, ()> {
         .parse(s)
     }
 
-    fn expression(s: &mut VecStream<ExprToken>) -> Result<Node, ()>
+    fn expression(s: &mut VecStream<ExprToken>) -> Result<Node, ParseErr<ExprToken>>
     {
         let inf_mul = fn_parser(inf_mul_f);
         let add_symb = predicate(|t: &ExprToken| t.is_add_op());

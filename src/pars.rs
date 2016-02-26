@@ -50,7 +50,7 @@ impl<S> Parse for Token<S>
         if satified {
             Ok(tokens.next().unwrap())
         } else {
-            Err(ParseErr::Expected(self.0.clone()))
+            Err(ParseErr::unexpected(tokens.peek()))
         }
     }
 }
@@ -59,18 +59,20 @@ impl<S> Parse for Token<S>
 #[derive(Clone)]
 pub struct Predicate<F, S>
 where S: TokenStream,
-     F: Fn(&S::Token) -> bool {
+      F: Fn(&S::Token) -> bool
+{
     predicate: F,
     _phantom: PhantomData<S>
 }
 
 impl<S, F> Parse for Predicate<F, S>
     where S: TokenStream,
+          S::Token: Clone,
         F: Fn(&S::Token) -> bool
 {
     type Input = S;
     type Output = S::Token;
-    type Error = ();
+    type Error = ParseErr<S::Token>;
 
     fn parse(&self, tokens: &mut S) -> Result<Self::Output, Self::Error> {
         let next_token = tokens.peek();
@@ -79,7 +81,7 @@ impl<S, F> Parse for Predicate<F, S>
         if satified {
             Ok(tokens.next().unwrap())
         } else {
-            Err(())
+            Err(ParseErr::unexpected(tokens.peek()))
         }
     }
 }
