@@ -97,7 +97,7 @@ fn tokenize(input: &str) -> Result<Vec<ExprToken>, ParseErr<char>> {
     }
 
     fn iden_f(input: &mut CharStream) -> Result<ExprToken, ParseErr<char>> {
-        if let Some(alph) = input.peek().and_then(|c| alphabetic(c)) {
+        if let Some(_) = input.peek().and_then(|c| alphabetic(c)) {
             let mut res = String::new();
             while let Some(alph) = input.peek().and_then(|c| alphanumeric(c)) {
                 res.push(alph);

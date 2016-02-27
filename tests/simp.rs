@@ -9,7 +9,7 @@ use prs::pars::predicate;
 use prs::pars::fn_parser;
 use prs::comb::ParserComb;
 
-use prs::result::ParseErr::Unexpected;
+use prs::result::ParseErr::UnexpectedAt;
 
 #[test]
 fn token_test() {
@@ -17,7 +17,7 @@ fn token_test() {
 
     assert_eq!(Token('x').parse(&mut input), Ok('x'));
     assert_eq!(Token('y').parse(&mut input), Ok('y'));
-    assert_eq!(Token('w').parse(&mut input), Err(Unexpected('z')));
+    assert_eq!(Token('w').parse(&mut input), Err(UnexpectedAt('z', 2)));
     assert_eq!(Token('z').parse(&mut input), Ok('z'));
 }
 
@@ -31,7 +31,7 @@ fn pred_test() {
 
     assert_eq!(dig.parse(&mut input), Ok(1));
     assert_eq!(dig.parse(&mut input), Ok(2));
-    assert_eq!(dig.parse(&mut input), Err(Unexpected('a')));
+    assert_eq!(dig.parse(&mut input), Err(UnexpectedAt('a', 2)));
     assert_eq!(input.peek(), Some('a'));
 }
 

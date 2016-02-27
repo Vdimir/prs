@@ -50,13 +50,12 @@ impl<S> Parse for Token<S>
         if satified {
             Ok(tokens.next().unwrap())
         } else {
-            Err(ParseErr::unexpected(tokens.peek()))
+            Err(ParseErr::unexpected(tokens.peek()).at(tokens.position()))
         }
     }
 }
 
 // ------------------------------------------ Predicate -------------------------------------------
-#[derive(Clone)]
 pub struct Predicate<F, S>
 where S: TokenStream,
       F: Fn(&S::Token) -> bool
@@ -81,7 +80,7 @@ impl<S, F> Parse for Predicate<F, S>
         if satified {
             Ok(tokens.next().unwrap())
         } else {
-            Err(ParseErr::unexpected(tokens.peek()))
+            Err(ParseErr::unexpected(tokens.peek()).at(tokens.position()))
         }
     }
 }

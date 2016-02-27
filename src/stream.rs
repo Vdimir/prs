@@ -8,6 +8,7 @@ pub trait TokenStream {
     type Token;
     fn peek(&mut self) -> Option<Self::Token>;
     fn next(&mut self) -> Option<Self::Token>;
+    fn position(&self) -> usize;
 }
 
 pub trait SavableStream: TokenStream {
@@ -21,24 +22,6 @@ pub trait RangeStream: SavableStream {
     /// return range begin from previously saved state end with current state
     fn range(&self, Self::State) -> Option<Self::Range>;
 }
-
-// /// Accumulates passed tokens from `TokenStream` and return ranges
-// pub struct TokenStreamAccumulator<S: RangeStream> {
-//     stream: S,
-//     pos: S::State,
-// }
-// 
-// impl TokenStreamAccumulator<S: RangeStream> {
-//     fn take_range(&mut self) -> Option<Self::Range> {
-//         let res = self.range(self.pos);
-//         self.pos = self.stream.save()
-//         return res;
-//     }
-// 
-//     fn backtrack_range(&mut self) {
-//         self.stream.restore(self.pos);
-//     }
-// }
 
 
 // ======================================= Implementations ========================================
@@ -77,6 +60,10 @@ pub mod char_stream {
             let current_char = self.peek();
             self.position += current_char.map_or(0, |c| c.len_utf8());
             current_char
+        }
+
+        fn position(&self) -> usize {
+            self.source[..self.position].chars().count()
         }
     }
 
@@ -137,6 +124,10 @@ pub mod vec_stream {
             self.position += 1;
             res
         }
+
+        fn position(&self) -> usize {
+            self.position
+        }
     }
 
     impl<T: Clone> VecStream<T> {
@@ -166,9 +157,10 @@ mod tests {
         assert_eq!(stream.peek(), Some('n'));
         assert_eq!(stream.next(), Some('n'));
         assert_eq!(stream.next(), Some('g'));
+        assert_eq!(stream.position(), 3);
         assert_eq!(stream.range(saved), Some("eng"));
 
-        let saved = stream.save();        
+        let saved = stream.save();
         assert_eq!(stream.peek(), Some('_'));
         assert_eq!(stream.next(), Some('_'));
         assert_eq!(stream.range(saved), Some("_"));
@@ -190,7 +182,7 @@ mod tests {
         assert_eq!(stream.next(), Some('ч'));
         assert_eq!(stream.peek(), Some('_'));
         assert_eq!(stream.range(saved), Some("фцч"));
-        
+
         assert_eq!(stream.next(), Some('_'));
 
         let saved = stream.save();
@@ -199,6 +191,7 @@ mod tests {
         assert_eq!(stream.next(), Some('2'));
         assert_eq!(stream.next(), Some('3'));
         assert_eq!(stream.range(saved), Some("123"));
+        assert_eq!(stream.position(), 11);
         assert_eq!(stream.peek(), None);
         assert_eq!(stream.next(), None);
         assert_eq!(stream.next(), None);

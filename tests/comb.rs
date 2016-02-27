@@ -12,7 +12,7 @@ use prs::comb::many;
 use prs::comb::maybe;
 use prs::comb::Pair;
 
-use prs::result::ParseErr::Unexpected;
+use prs::result::ParseErr::UnexpectedAt;
 
 #[test]
 fn or_test() {
@@ -21,7 +21,7 @@ fn or_test() {
 
     assert_eq!(x_or_y.parse(&mut input), Ok('x'));
     assert_eq!(x_or_y.parse(&mut input), Ok('y'));
-    assert_eq!(x_or_y.parse(&mut input), Err(Unexpected('z')));
+    assert_eq!(x_or_y.parse(&mut input), Err(UnexpectedAt('z', 2)));
 
     let xyz = x_or_y.or(Token('z'));
     assert_eq!(xyz.parse(&mut input), Ok('z'));
@@ -30,31 +30,28 @@ fn or_test() {
 #[test]
 fn then_test() {
     let dig_square = predicate(|c: &char| c.is_digit(10))
-            //.on_err(Unexpected("digit"))
             .then(|c: char| c.to_digit(10).map(|d| d * d).unwrap());
 
     let input = &mut CharStream::new("123a");
     assert_eq!(dig_square.parse(input), Ok(1));
     assert_eq!(dig_square.parse(input), Ok(4));
     assert_eq!(dig_square.parse(input), Ok(9));
-    assert_eq!(dig_square.parse(input), Err(Unexpected('a')));
+    assert_eq!(dig_square.parse(input), Err(UnexpectedAt('a', 3)));
 }
 
 #[test]
 fn many_test() {
     let dig = many(predicate(|c: &char| c.is_digit(10)));
-//            .on_err(Unexpected("digit"));
 
     let input = &mut CharStream::new("123a");
     assert_eq!(dig.parse(input), Ok(vec!['1','2','3']));
-    assert_eq!(dig.parse(input), Err(Unexpected('a')));
+    assert_eq!(dig.parse(input), Err(UnexpectedAt('a', 3)));
     assert_eq!(input.peek(), Some('a'));
 }
 
 #[test]
 fn many_comb_test() {
     let dig = predicate(|c: &char| c.is_digit(10))
-                //.on_err(Unexpected("digit"))
                 .many()
                 .then(|s: String| s.parse::<u32>().unwrap());
 
@@ -92,11 +89,11 @@ fn tup_test() {
     assert_eq!(x_and_y.parse(&mut CharStream::new("xyzx")), Ok(('x', 'y', 'z')));
 
     let input = &mut CharStream::new("yxx");
-    assert_eq!(x_and_y.parse(input), Err(Unexpected('y')));
+    assert_eq!(x_and_y.parse(input), Err(UnexpectedAt('y', 0)));
     assert_eq!(input.peek(), Some('y'));
 
     let input = &mut CharStream::new("xyy");
-    assert_eq!(x_and_y.parse(input), Err(Unexpected('y')));
+    assert_eq!(x_and_y.parse(input), Err(UnexpectedAt('y', 2)));
     assert_eq!(input.peek(), Some('x'));
 }
 
@@ -107,7 +104,7 @@ fn pair_test() {
     assert_eq!(x_and_y.parse(&mut CharStream::new("xyxy")), Ok(('x', 'y')));
 
     let input = &mut CharStream::new("z");
-    assert_eq!(x_and_y.parse(input), Err(Unexpected('z')));
+    assert_eq!(x_and_y.parse(input), Err(UnexpectedAt('z',0)));
     assert_eq!(input.peek(), Some('z'));
 }
 
@@ -118,11 +115,11 @@ fn and_test() {
     assert_eq!(x_and_y.parse(&mut CharStream::new("xyzx")), Ok(vec!('x', 'y', 'z')));
 
     let input = &mut CharStream::new("yxx");
-    assert_eq!(x_and_y.parse(input), Err(Unexpected('y')));
+    assert_eq!(x_and_y.parse(input), Err(UnexpectedAt('y',0)));
     assert_eq!(input.peek(), Some('y'));
 
     let input = &mut CharStream::new("xyy");
-    assert_eq!(x_and_y.parse(input), Err(Unexpected('y')));
+    assert_eq!(x_and_y.parse(input), Err(UnexpectedAt('y',2)));
     assert_eq!(input.peek(), Some('x'));
 }
 
@@ -133,7 +130,7 @@ fn skip_test() {
     assert_eq!(x_and_y.parse(&mut CharStream::new("x y")), Ok(('x', 'y')));
 
     let input = &mut CharStream::new("xy");
-    assert_eq!(x_and_y.parse(input), Err(Unexpected('y')));
+    assert_eq!(x_and_y.parse(input), Err(UnexpectedAt('y',1)));
     assert_eq!(input.peek(), Some('x'));
 }
 

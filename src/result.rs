@@ -3,6 +3,7 @@
 pub enum ParseErr<T> {
     Undefined,
     Unexpected(T),
+    UnexpectedAt(T, usize),
     UnexpectedEof,
 }
 
@@ -14,4 +15,25 @@ impl<T> ParseErr<T> {
             ParseErr::UnexpectedEof
         }
     }
+
+    pub fn at(self, pos: usize) -> Self {
+        match self {
+            ParseErr::Unexpected(t) => ParseErr::UnexpectedAt(t, pos),
+            e => e
+        }
+    }
 }
+
+use std::fmt;
+use self::ParseErr::*;
+impl<T: fmt::Display> fmt::Display for ParseErr<T>{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            &Undefined => write!(f, "Unknown error"),
+            &Unexpected(ref t) => write!(f, "Unexpected token: `{}`", *t),
+            &UnexpectedAt(ref t, p) => write!(f, "Unexpected token: `{}` at {}", t, p),
+            &UnexpectedEof => write!(f, "Unexpected EOF"),
+        }
+    }
+}
+

@@ -181,9 +181,6 @@ where I: SavableStream,
             parser: &self.1,
             input: tokens
         };
-        // for _ in 0..0 {
-            // try!(it.parse_once());
-        // }
         while it.next().is_some() {}
         Ok(res)
     }
@@ -264,7 +261,8 @@ where I: SavableStream,
         if let Some(parser) = self.parsers.next() {
             let result = parser.parse(self.input);
             if result.is_err() {
-                self.parsers.by_ref().count();
+                while self.parsers.next().is_some() {}
+                //self.parsers.by_ref().count();
             }
             Some(result)
         } else {
