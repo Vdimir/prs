@@ -57,6 +57,22 @@ pub fn eof<I>() -> Eof<I> {
 pub struct Then<P, F>(P, F);
 // where  P: Parse, F: Fn(P::Output) -> R
 
+pub struct DynamicThen<'a, I, O, E, F>(Box<ParseTrait<'a, I, O, E>>, F);
+//  pub struct DynamicThen<'a, I, O, E, F>(Box<Parse<Input=I, Output=O, Error=E>+'a>, F);
+
+impl<'a, I, O, E, F, R> Parse for DynamicThen<'a, I, O, E, F>
+    where I: TokenStream,
+        F: Fn(O) -> R
+{
+    type Input = I;
+    type Output = R;
+    type Error = E;
+
+    fn parse(&self, tokens: &mut Self::Input) -> Result<Self::Output, Self::Error> {
+        return self.0.parse(tokens).map(&self.1);
+    }
+}
+
 impl<F, P, R> Parse for Then<P, F>
     where P: Parse,
         F: Fn(P::Output) -> R
@@ -186,8 +202,8 @@ where I: SavableStream,
     }
 }
 
-struct Iter<'a, P, I: 'a> {
-    parser: P,
+struct Iter<'a, P: 'a, I: 'a> {
+    parser: &'a P,
     input: &'a mut I
 }
 
@@ -377,6 +393,11 @@ where Self: Sized + 'a  {
     {
         DynamicOr(Box::new(self), Box::new(parser))
     }
+
+   fn then<F, B>(self, f: F) -> DynamicThen<'a, Self::Input, Self::Output, Self::Error, F>
+   where F: Fn(Self::Output) -> B {
+       DynamicThen(Box::new(self), f)
+   }
 }
 
 impl<'a, P> ParserCombDynamic<'a> for P
@@ -385,14 +406,14 @@ impl<'a, P> ParserCombDynamic<'a> for P
 
 pub trait ParserComb: Parse
 where Self: Sized, Self::Input: TokenStream  {
-    // fn static_or<P: Parse>(self, parser: P) -> Or<Self, P> {
+    // fn or<P: Parse>(self, parser: P) -> Or<Self, P> {
     //     Or(self, parser)
     // }
 
-    fn then<F, B>(self, f: F) -> Then<Self, F>
-    where F: Fn(Self::Output) -> B {
-        Then(self, f)
-    }
+//   fn then<F, B>(self, f: F) -> Then<Self, F>
+//   where F: Fn(Self::Output) -> B {
+//       Then(self, f)
+//   }
 
     fn many<R>(self) -> Many<Self, R> {
         Many(self, PhantomData)

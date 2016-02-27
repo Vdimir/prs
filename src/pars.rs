@@ -14,6 +14,7 @@ pub trait Parse {
 
     fn parse(&self, &mut Self::Input) -> Result<Self::Output, Self::Error>;
 }
+use std::rc::Rc;
 
 impl<'a, I, O, P, E> Parse for &'a P
     where P: Parse<Input=I, Output = O, Error=E>,
@@ -24,6 +25,19 @@ impl<'a, I, O, P, E> Parse for &'a P
     type Error = E;
     fn parse(&self, tokens: &mut I) -> Result<O, E> {
         (*self).parse(tokens)
+    }
+}
+
+
+impl<'a, I, O, P, E> Parse for Rc<P>
+    where P: Parse<Input=I, Output = O, Error=E>,
+          // I: TokenStream,
+{
+    type Input = I;
+    type Output = O;
+    type Error = E;
+    fn parse(&self, tokens: &mut I) -> Result<O, E> {
+        (**self).parse(tokens)
     }
 }
 

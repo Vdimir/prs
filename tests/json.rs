@@ -26,34 +26,28 @@ enum JsonValue {
 }
 use std::iter::FromIterator;
 use prs::result::ParseErr;
+use std::rc::Rc;
+use std::cell::RefCell;
 
 fn json_parse(input: &str) -> Result<JsonValue, String>  {
     let stream = &mut CharStream::new(input);
 
     fn object_f(tokens: &mut CharStream) -> Result<JsonValue, ParseErr<char>> {
 
-        let alph_num = predicate(move |c: &char| c.is_alphanumeric());
 
-        let quoted_str = fn_parser(move |inp| (Token('\"'), many::<_,String>(&alph_num).skip(Token('\"')))
-                .then(|(_, s)| s)
-                .parse(inp));
+        let quoted_str = Rc::new((Token('\"'), many::<_,String>(predicate(move |c: &char| c.is_alphanumeric())).skip(Token('\"')))
+                .then(move |(_, s)| s));
 
-        let value = (&quoted_str).then(|s| JsonValue::Str(s))
+        let value = (quoted_str.clone()).then(move |s| JsonValue::Str(s))
                         .or(fn_parser(object_f));
-        let l_fig_bracket = Token('{');
-        let r_fig_bracket = Token('}');
 
-        let colon = Token(':');
-
-        (l_fig_bracket,
+        (Token('{'),
             many(
-            fn_parser(|inp|
-                ((&quoted_str).skip(&colon), &value).skip(Token(','))
-               .parse(inp))
+                (quoted_str.skip(Token(':')), value).skip(Token(','))
             )
-            .then(|v: Vec<(String, JsonValue)>| JsonValue::Object(HashMap::from_iter(v))),
-        r_fig_bracket)
-            .then(|(_, a, _)| a)
+            .then(move |v: Vec<(String, JsonValue)>| JsonValue::Object(HashMap::from_iter(v))),
+        Token('}'))
+            .then(move |(_, a, _)| a)
             .parse(tokens)
     }
 
