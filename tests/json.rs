@@ -35,7 +35,9 @@ fn json_parse(input: &str) -> Result<JsonValue, String>  {
     fn object_f(tokens: &mut CharStream) -> Result<JsonValue, ParseErr<char>> {
 
 
-        let quoted_str = Rc::new((Token('\"'), many::<_,String>(predicate(move |c: &char| c.is_alphanumeric())).skip(Token('\"')))
+        let iden = predicate(move |c: &char| c.is_alphanumeric());
+
+        let quoted_str = Rc::new((Token('\"'), many::<_,String>(iden).skip(Token('\"')))
                 .then(move |(_, s)| s));
 
         let value = (quoted_str.clone()).then(move |s| JsonValue::Str(s))

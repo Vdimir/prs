@@ -181,6 +181,10 @@ impl<P, R> Parse for Many<P, R>
 
 // -------------------------------------------- Skip ----------------------------------------------
 
+// 
+// pub struct Skip<I, SkipO, O, E>(Box<ParseTrait<'a, I, SkipO, E>>, Box<ParseTrait<'a, I, O, E>>);
+
+
 pub struct SkipAny<P1, P2>(P1, P2);
 impl<P1, P2, I, E> Parse for SkipAny<P1, P2>
 where I: SavableStream,
@@ -398,6 +402,14 @@ where Self: Sized + 'a  {
    where F: Fn(Self::Output) -> B {
        DynamicThen(Box::new(self), f)
    }
+
+   fn skip<P: 'a, O>(self, parser: P) -> Then<Pair<'a, Self::Input, Self::Error, Self::Output, O>,
+                                        fn((Self::Output, P::Output)) -> Self::Output>
+   where P: Parse<Input=Self::Input, Error=Self::Error, Output=O> {
+       fn first<A,B>(t: (A,B)) -> A { t.0 }
+
+       Then(Pair(Box::new(self), Box::new(parser)), first )
+   }
 }
 
 impl<'a, P> ParserCombDynamic<'a> for P
@@ -419,13 +431,13 @@ where Self: Sized, Self::Input: TokenStream  {
         Many(self, PhantomData)
     }
 
-    fn skip<P>(self, parser: P) -> Then<(Self, P), fn((Self::Output, P::Output)) -> Self::Output>
-    where P: Parse<Input=Self::Input> {
-        // (self, parser).then(|(r,_)| r)
-        fn first<A,B>(t: (A,B)) -> A { t.0 }
-
-        Then((self, parser), first )
-    }
+//    fn skip<P>(self, parser: P) -> Then<(Self, P), fn((Self::Output, P::Output)) -> Self::Output>
+//    where P: Parse<Input=Self::Input> {
+//        // (self, parser).then(|(r,_)| r)
+//        fn first<A,B>(t: (A,B)) -> A { t.0 }
+//
+//        Then((self, parser), first )
+//    }
 
     fn skip_any<P>(self, parser: P) -> SkipAny<Self, P>
     where P: Parse<Input=Self::Input> {
