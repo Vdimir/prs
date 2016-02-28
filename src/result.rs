@@ -44,8 +44,7 @@ impl<A> FromIterator<A> for SupressedRes {
     fn from_iter<T>(it: T) -> Self
     where T: IntoIterator<Item=A>
     {
-        for i in it {
-        }
+        for _ in it {}
         SupressedRes
     }
 }

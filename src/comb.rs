@@ -19,11 +19,11 @@ impl<I, E> Parse for Nop<I, E>
     where I: TokenStream,
 {
     type Input = I;
-    type Output = ();
+    type Output = SupressedRes;
     type Error = E;
 
     fn parse(&self, _: &mut Self::Input) -> Result<Self::Output, Self::Error> {
-        Ok(())
+        Ok(SupressedRes)
     }
 }
 
@@ -33,19 +33,17 @@ pub fn nop<I, E>() -> Nop<I, E> {
 
 // --------------------------------------------- Eof ---------------------------------------------
 pub struct Eof<I>(PhantomData<I>);
-// where  P: Parse, F: Fn(P::Output) -> R
-
 impl<I> Parse for Eof<I>
     where I: TokenStream,
 {
     type Input = I;
-    type Output = ();
+    type Output = SupressedRes;
     type Error = ParseErr<I::Token>;
 
     fn parse(&self, tokens: &mut Self::Input) -> Result<Self::Output, Self::Error> {
         match tokens.peek() {
             Some(t) => Err(ParseErr::unexpected(Some(t))),
-            None => Ok(()),
+            None => Ok(SupressedRes),
         }
     }
 }
@@ -55,11 +53,8 @@ pub fn eof<I>() -> Eof<I> {
 }
 
 // --------------------------------------------- Then ---------------------------------------------
-pub struct Then<P, F>(P, F);
-// where  P: Parse, F: Fn(P::Output) -> R
 
 pub struct DynamicThen<'a, I, O, E, F>(Box<ParseTrait<'a, I, O, E>>, F);
-
 impl<'a, I, O, E, F, R> Parse for DynamicThen<'a, I, O, E, F>
     where I: TokenStream,
         F: Fn(O) -> R
@@ -73,6 +68,7 @@ impl<'a, I, O, E, F, R> Parse for DynamicThen<'a, I, O, E, F>
     }
 }
 
+pub struct Then<P, F>(P, F);
 impl<F, P, R> Parse for Then<P, F>
     where P: Parse,
         F: Fn(P::Output) -> R
@@ -115,7 +111,6 @@ impl<R, T, P1, P2> Parse for Or<P1, P2>
     type Error = ParseErr<T::Token>;
 
     fn parse(&self, tokens: &mut T) -> Result<Self::Output, Self::Error> {
-
         match self.0.parse(tokens) {
             Ok(v) => Ok(v),
             Err(e0) => {
@@ -155,6 +150,31 @@ impl<'a, R, T> Parse for DynamicOr<'a, R, T, ParseErr<T::Token>, ParseErr<T::Tok
 }
 
 // -------------------------------------------- Many ----------------------------------------------
+struct ManyIter<'a, P: 'a, I: 'a> {
+    parser: &'a P,
+    input: &'a mut I
+}
+
+impl<'a, P, I: 'a> ManyIter<'a, P, I>
+    where P: Parse<Input=I>,
+          I: TokenStream
+{
+    fn parse_once(&mut self) ->  Result<P::Output, P::Error> {
+        self.parser.parse(self.input)
+    }
+}
+
+impl<'a, P, I> Iterator for ManyIter<'a, P, I>
+where P: Parse<Input=I>,
+      I: TokenStream {
+
+    type Item = P::Output;
+    fn next(&mut self) -> Option<Self::Item> {
+        self.parser.parse(self.input).ok()
+    }
+}
+
+
 pub struct Many<P, R>(P, PhantomData<R>);
 
 impl<P, R> Parse for Many<P, R>
@@ -166,7 +186,7 @@ impl<P, R> Parse for Many<P, R>
     type Output = R;
     type Error = P::Error;
     fn parse(&self, tokens: &mut Self::Input) -> Result<Self::Output, Self::Error> {
-        let mut it = Iter { parser: &self.0, input: tokens };
+        let mut it = ManyIter { parser: &self.0, input: tokens };
         let first = try!(it.parse_once());
 
         return Ok(Some(first).into_iter()
@@ -186,7 +206,7 @@ where P::Input: SavableStream,
     type Output = R;
     type Error = P::Error;
     fn parse(&self, tokens: &mut Self::Input) -> Result<Self::Output, Self::Error> {
-        let mut it = Iter { parser: &self.0, input: tokens };
+        let it = ManyIter { parser: &self.0, input: tokens };
         Ok(it.collect())
     }
 }
@@ -212,30 +232,6 @@ where I: SavableStream
     }
 }
 
-struct Iter<'a, P: 'a, I: 'a> {
-    parser: &'a P,
-    input: &'a mut I
-}
-
-impl<'a, P, I: 'a> Iter<'a, P, I>
-    where P: Parse<Input=I>,
-          I: TokenStream
-{
-    fn parse_once(&mut self) ->  Result<P::Output, P::Error> {
-        self.parser.parse(self.input)
-    }
-}
-
-impl<'a, P, I> Iterator for Iter<'a, P, I>
-where P: Parse<Input=I>,
-      I: TokenStream {
-
-    type Item = P::Output;
-    fn next(&mut self) -> Option<Self::Item> {
-        self.parser.parse(self.input).ok()
-    }
-}
-
 // ----------------------------------------- Maybe ------------------------------------------
 pub struct Maybe<P>(P);
 
@@ -251,47 +247,33 @@ impl<P> Parse for Maybe<P>
 }
 
 // -------------------------------------------- And ---------------------------------------------
-pub struct AndIter<'a, I: 'a, R: 'a, E: 'a, PIter>
-where PIter: Iterator<Item=&'a Box<ParseTrait<'a, I, R, E>>>
+pub struct AndIter<'a, I: 'a, R: 'a, E: 'a, P>
+where P: Iterator<Item=&'a Box<ParseTrait<'a, I, R, E>>>
 {
-    parsers: PIter,
+    parsers: P,
     input: &'a mut I,
-    finished: bool,
-    idx: usize,
 }
 
-impl<'a, I, R, E, PIter> AndIter<'a, I, R, E, PIter>
+impl<'a, I, R, E, P> AndIter<'a, I, R, E, P>
 where I: SavableStream,
-      PIter: Iterator<Item=&'a Box<ParseTrait<'a, I, R, E>>>
+      P: Iterator<Item=&'a Box<ParseTrait<'a, I, R, E>>>
 {
-    fn new(a: PIter, input: &'a mut I) -> Self {
+    fn new(a: P, input: &'a mut I) -> Self {
         AndIter {
             parsers: a,
             input: input,
-            finished: false,
-            idx: 0,
         }
     }
 }
 
-use std::iter::empty;
-
-impl<'a, I, R, E, PIter> Iterator for AndIter<'a, I, R, E, PIter>
+impl<'a, I, R, E, P> Iterator for AndIter<'a, I, R, E, P>
 where I: SavableStream,
-      PIter: Iterator<Item=&'a Box<ParseTrait<'a, I, R, E>>>
+      P: Iterator<Item=&'a Box<ParseTrait<'a, I, R, E>>>
 {
     type Item = Result<R, E>;
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(parser) = self.parsers.next() {
-            let result = parser.parse(self.input);
-            if result.is_err() {
-                while self.parsers.next().is_some() {}
-                //self.parsers.by_ref().count();
-            }
-            Some(result)
-        } else {
-            None
-        }
+        return self.parsers.next()
+            .map(|p| p.parse(self.input));
     }
 }
 
@@ -383,35 +365,35 @@ where I: SavableStream,
 
 // ----------------------------------------- Constructor ------------------------------------------
 // TODO: refactor bad name
-pub trait ParserCombDynamic<'a>: Parse
+pub trait ParserCombDynamic<'a, I, O, E>: Parse<Input=I, Output=O, Error=E>
 where Self: Sized + 'a  {
 
-    fn and<P>(self, parser: P) -> And<'a, Self::Input, Self::Output, Self::Error>
-    where P: Parse<Input=Self::Input, Output=Self::Output, Error=Self::Error> + 'a
+    fn and<P>(self, parser: P) -> And<'a, I, O, E>
+    where P: Parse<Input=I, Output=O, Error=E> + 'a
     {
         And { parsers: vec![Box::new(self), Box::new(parser)] }
     }
 
-    fn or<P, E2>(self, parser: P) -> DynamicOr<'a, Self::Output, Self::Input, Self::Error, E2>
-    where P: Parse<Input=Self::Input, Output=Self::Output, Error=E2> + 'a
+    fn or<P, E2>(self, parser: P) -> DynamicOr<'a, O, I, E, E2>
+    where P: Parse<Input=I, Output=O, Error=E2> + 'a
     {
         DynamicOr(Box::new(self), Box::new(parser))
     }
 
-    fn then<F, B>(self, f: F) -> DynamicThen<'a, Self::Input, Self::Output, Self::Error, F>
+    fn then<F, B>(self, f: F) -> DynamicThen<'a, I, O, E, F>
     where F: Fn(Self::Output) -> B {
         DynamicThen(Box::new(self), f)
     }
 
-    fn skip<P: 'a, O>(self, parser: P) -> Then<Pair<'a, Self::Input, Self::Error, Self::Output, O>,
-                                         fn((Self::Output, P::Output)) -> Self::Output>
-    where P: Parse<Input=Self::Input, Error=Self::Error, Output=O> {
+    fn skip<P: 'a, R>(self, parser: P) -> Then<Pair<'a, I, E, O, R>,
+                                         fn((O, P::Output)) -> O>
+    where P: Parse<Input=I, Error=E, Output=R> {
         fn first<A,B>(t: (A,B)) -> A { t.0 }
         Then(Pair(Box::new(self), Box::new(parser)), first )
     }
 
-    fn skip_any<P>(self, parser: P) -> Skip<'a, Self::Input, SupressedRes, Self::Output, Self::Error>
-    where P: Parse<Input=Self::Input, Error=Self::Error> + 'a,
+    fn skip_any<P>(self, parser: P) -> Skip<'a, I, SupressedRes, O, E>
+    where P: Parse<Input=I, Error=E> + 'a,
           Self::Input: SavableStream
     {
         Skip(Box::new(self), Box::new(Many0(parser, PhantomData)))
@@ -419,8 +401,8 @@ where Self: Sized + 'a  {
 
 }
 
-impl<'a, P> ParserCombDynamic<'a> for P
-    where P: Parse + 'a
+impl<'a, P, I, O, E> ParserCombDynamic<'a, I, O, E> for P
+    where P: Parse<Input=I, Output=O, Error=E> + 'a
 {}
 
 pub trait ParserComb: Parse

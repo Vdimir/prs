@@ -7,14 +7,16 @@ use prs::pars::Parse;
 use prs::comb::many;
 use prs::comb::skip_first;
 
-use prs::comb::{ParserComb,  ParserCombDynamic};
+use prs::comb::ParserCombDynamic;
 use prs::comb::pair;
 use std::collections::HashMap;
-use std::vec::Vec;
 
 use prs::stream::char_stream::CharStream;
-use prs::stream::TokenStream;
 
+use prs::result::ParseErr;
+use std::rc::Rc;
+
+#[allow(dead_code)]
 #[derive(PartialEq, Clone, Debug)]
 enum JsonValue {
     Str(String),
@@ -25,10 +27,6 @@ enum JsonValue {
     False,
     Null,
 }
-use std::iter::FromIterator;
-use prs::result::ParseErr;
-use std::rc::Rc;
-use std::cell::RefCell;
 
 fn json_parse(input: &str) -> Result<JsonValue, String>  {
     let stream = &mut CharStream::new(input);

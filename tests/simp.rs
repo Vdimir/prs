@@ -7,7 +7,6 @@ use prs::stream::TokenStream;
 use prs::pars::Parse;
 use prs::pars::predicate;
 use prs::pars::fn_parser;
-use prs::comb::ParserComb;
 use prs::comb::ParserCombDynamic;
 
 use prs::result::ParseErr::UnexpectedAt;

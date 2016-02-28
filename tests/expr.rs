@@ -13,7 +13,6 @@ use prs::stream::TokenStream;
 
 #[derive(PartialEq, Debug, Clone)]
 enum ExprToken {
-    None,
     Num(u32),
     Iden(String),
     Add,
