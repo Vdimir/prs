@@ -37,3 +37,15 @@ impl<T: fmt::Display> fmt::Display for ParseErr<T>{
     }
 }
 
+use std::iter::FromIterator;
+pub struct SupressedRes;
+
+impl<A> FromIterator<A> for SupressedRes {
+    fn from_iter<T>(it: T) -> Self
+    where T: IntoIterator<Item=A>
+    {
+        for i in it {
+        }
+        SupressedRes
+    }
+}
