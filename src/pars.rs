@@ -24,7 +24,7 @@ impl<'a, I, O, P, E> Parse for &'a P
     type Output = O;
     type Error = E;
     fn parse(&self, tokens: &mut I) -> Result<O, E> {
-        (*self).parse(tokens)
+        (**self).parse(tokens)
     }
 }
 

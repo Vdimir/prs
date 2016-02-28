@@ -5,9 +5,10 @@ use prs::pars::predicate;
 use prs::pars::fn_parser;
 use prs::pars::Parse;
 use prs::comb::many;
+use prs::comb::skip_first;
 
 use prs::comb::{ParserComb,  ParserCombDynamic};
-use prs::comb::Pair;
+use prs::comb::pair;
 use std::collections::HashMap;
 use std::vec::Vec;
 
@@ -34,6 +35,7 @@ fn json_parse(input: &str) -> Result<JsonValue, String>  {
 
     fn object_f(tokens: &mut CharStream) -> Result<JsonValue, ParseErr<char>> {
 
+        let ws = predicate( |c| char::is_whitespace(*c) );
 
         let iden = predicate(move |c: &char| c.is_alphanumeric());
 
@@ -42,14 +44,11 @@ fn json_parse(input: &str) -> Result<JsonValue, String>  {
 
         let value = (quoted_str.clone()).then(move |s| JsonValue::Str(s))
                         .or(fn_parser(object_f));
-
-        (Token('{'),
-            many(
-                (quoted_str.skip(Token(':')), value).skip(Token(','))
-            )
-            .then(move |v: Vec<(String, JsonValue)>| JsonValue::Object(HashMap::from_iter(v))),
-        Token('}'))
-            .then(move |(_, a, _)| a)
+        let kv_pair = pair(quoted_str.skip(Token(':')), value);
+        skip_first(Token('{').skip_any(ws),
+            many( kv_pair.skip(Token(',')))
+            .then(JsonValue::Object))
+            .skip(Token('}'))
             .parse(tokens)
     }
 
@@ -67,7 +66,7 @@ fn json_test() {
     res.insert("ob1".to_owned(), JsonValue::Object(sub_obj));
     res.insert("second".to_owned(), JsonValue::Str("001".to_owned()));
 
-    let parsed = json_parse("{\"ob1\":{\"first\":\"123\",\"second\":\"two\",},\"second\":\"001\",}");
+    let parsed = json_parse("{    \"ob1\":{\"first\":\"123\",\"second\":\"two\",},\"second\":\"001\",}");
     assert_eq!(parsed.unwrap(), JsonValue::Object(res));
 }
 

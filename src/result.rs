@@ -31,7 +31,7 @@ impl<T: fmt::Display> fmt::Display for ParseErr<T>{
         match self {
             &Undefined => write!(f, "Unknown error"),
             &Unexpected(ref t) => write!(f, "Unexpected token: `{}`", *t),
-            &UnexpectedAt(ref t, p) => write!(f, "Unexpected token: `{}` at {}", t, p),
+            &UnexpectedAt(ref t, p) => write!(f, "Unexpected token: `{}` at {}", *t, p),
             &UnexpectedEof => write!(f, "Unexpected EOF"),
         }
     }
