@@ -2,15 +2,13 @@
 extern crate prs;
 
 use prs::pars::Token;
-use prs::stream::char_stream::CharStream;
-use prs::stream::TokenStream;
-use prs::comb::ParserComb;
-use prs::comb::ParserCombDynamic;
 use prs::pars::Parse;
 use prs::pars::predicate;
+use prs::comb::ParserComb;
 use prs::comb::many;
 use prs::comb::maybe;
-use prs::comb::Pair;
+use prs::stream::char_stream::CharStream;
+use prs::stream::TokenStream;
 
 use prs::result::ParseErr::UnexpectedAt;
 
@@ -98,32 +96,6 @@ fn tup_test() {
 }
 
 #[test]
-fn pair_test() {
-    let x_and_y = Pair(Box::new(Token('x')), Box::new(Token('y')));
-
-    assert_eq!(x_and_y.parse(&mut CharStream::new("xyxy")), Ok(('x', 'y')));
-
-    let input = &mut CharStream::new("z");
-    assert_eq!(x_and_y.parse(input), Err(UnexpectedAt('z',0)));
-    assert_eq!(input.peek(), Some('z'));
-}
-
-#[test]
-fn and_test() {
-    let x_and_y = Token('x').and(Token('y')).and(Token('z'));
-
-    assert_eq!(x_and_y.parse(&mut CharStream::new("xyzx")), Ok(vec!('x', 'y', 'z')));
-
-    let input = &mut CharStream::new("yxx");
-    assert_eq!(x_and_y.parse(input), Err(UnexpectedAt('y',0)));
-    assert_eq!(input.peek(), Some('y'));
-
-    let input = &mut CharStream::new("xyy");
-    assert_eq!(x_and_y.parse(input), Err(UnexpectedAt('y',2)));
-    assert_eq!(input.peek(), Some('x'));
-}
-
-#[test]
 fn skip_test() {
     let x_and_y = (Token('x').skip(Token(' ')), Token('y'));
 
@@ -142,3 +114,4 @@ fn skip_many_test() {
     assert_eq!(x_and_y.parse(&mut CharStream::new("x y")), Ok(('x', 'y')));
     assert_eq!(x_and_y.parse(&mut CharStream::new("x     y")), Ok(('x', 'y')));
 }
+

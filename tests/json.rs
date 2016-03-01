@@ -7,8 +7,7 @@ use prs::pars::Parse;
 use prs::comb::many;
 use prs::comb::skip_first;
 
-use prs::comb::ParserCombDynamic;
-use prs::comb::pair;
+use prs::comb::ParserComb;
 use std::collections::HashMap;
 
 use prs::stream::char_stream::CharStream;
@@ -28,6 +27,7 @@ enum JsonValue {
     Null,
 }
 
+use prs::comb::wrap;
 fn json_parse(input: &str) -> Result<JsonValue, String>  {
     let stream = &mut CharStream::new(input);
 
@@ -51,22 +51,18 @@ fn json_parse(input: &str) -> Result<JsonValue, String>  {
     fn object_f(tokens: &mut CharStream) -> Result<JsonValue, ParseErr<char>> {
         let ws = Rc::new(predicate(|c| char::is_whitespace(*c)));
         let iden = predicate(|c| char::is_alphanumeric(*c));
-        let quoted_str = Rc::new((Token('\"'), many::<_,String>(iden).skip(Token('\"'))
+        let quoted_str = Rc::new(wrap((Token('\"'), many::<_,String>(iden).skip(Token('\"'))
                                   .skip_any(ws.clone()))
-                                  .then(|(_, s)| s));
-        let num = fn_parser(num_f);
-        let object = fn_parser(object_f);
-        let value = quoted_str.clone().then(JsonValue::Str)
-                        .or(num.then(JsonValue::Num))
-                        .or(object)
+                                  .then(|(_, s)| s)));
+
+        let value = wrap(quoted_str.clone().then(JsonValue::Str))
+                        .or(fn_parser(num_f).then(JsonValue::Num))
+                        .or(fn_parser(object_f))
                         .skip_any(ws.clone());
-        let kv_pair = pair(quoted_str.skip(Token(':').skip_any(ws.clone())), value);
-        //skip_first(Token('{').skip_any(ws),
-        //    many( kv_pair.skip(Token(',')))
-        //    .then(JsonValue::Object))
-        //    .skip(Token('}'))
+        let kv_pair = wrap((quoted_str.skip(Token(':').skip_any(ws.clone())), value));
+
         (Token('{').skip_any(ws.clone()),
-        many(kv_pair.skip(Token(',').skip_any(ws.clone()))).then(JsonValue::Object),
+        wrap(many(kv_pair.skip(Token(',').skip_any(ws.clone()))).then(JsonValue::Object)),
         Token('}').skip_any(ws.clone()))
             .then(|(_,a,_)| a)
             .parse(tokens)

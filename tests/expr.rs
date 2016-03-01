@@ -6,8 +6,8 @@ extern crate prs;
 use prs::pars::{Token, Parse, predicate, fn_parser};
 use prs::stream::char_stream::CharStream;
 use prs::stream::vec_stream::VecStream;
-use prs::comb::{ParserComb,  ParserCombDynamic};
-use prs::comb::{eof, many, maybe};
+use prs::comb::ParserComb;
+use prs::comb::{eof, many, maybe, wrap};
 use prs::result::ParseErr;
 use prs::stream::TokenStream;
 
@@ -72,18 +72,18 @@ impl ExprToken {
 fn tokenize(input: &str) -> Result<Vec<ExprToken>, ParseErr<char>> {
     let stream = &mut CharStream::new(input);
 
-    let op_symb = Token('+').then(|_| ExprToken::Add)
-                  .or(Token('-').then(|_| ExprToken::Sub)
-                  .or(Token('*').then(|_| ExprToken::Mul)))
-                  .or(Token('/').then(|_| ExprToken::Div));
+    let op_symb = wrap(Token('+').then(|_| ExprToken::Add)
+                  .or(wrap(Token('-').then(|_| ExprToken::Sub)
+                  .or(wrap(Token('*').then(|_| ExprToken::Mul)))))
+                  .or(wrap(Token('/').then(|_| ExprToken::Div))));
 
-    let paren = Token('(').then(|_| ExprToken::LParen)
-                .or(Token(')').then(|_| ExprToken::RParen));
+    let paren = wrap(Token('(').then(|_| ExprToken::LParen)
+                .or(wrap(Token(')').then(|_| ExprToken::RParen))));
 
     let digit = predicate(|c: &char| c.is_digit(10));
 
-    let num = digit.many()
-                .then(|s: String| ExprToken::Num(s.parse::<u32>().unwrap()));
+    let num = wrap(digit.many()
+                .then(|s: String| ExprToken::Num(s.parse::<u32>().unwrap())));
 
 
 
@@ -110,15 +110,13 @@ fn tokenize(input: &str) -> Result<Vec<ExprToken>, ParseErr<char>> {
     }
     let iden = fn_parser(iden_f);
 
-    //let ws = Token(' ');
-
-    let lexem = op_symb
-                .or(num)
-                .or(iden)
-                .or(paren);
+    let lexem = wrap(op_symb
+                .or(wrap(num))
+                .or(wrap(iden)))
+                .or(wrap(paren));
 
     let lexer = many(
-        lexem.skip_any(Token(' '))
+        wrap(lexem.skip_any(Token(' ')))
         )
         .skip(eof());
 
@@ -206,7 +204,7 @@ fn parse_expr(s: &str) -> Result<Node, ParseErr<ExprToken>> {
             Token(ExprToken::RParen))
             .then(|(_, e, _)| e);
 
-        let factor = num.or(iden).or(parens_exp);
+        let factor = num.or(wrap(iden)).or(wrap(parens_exp));
         let op_symb = predicate(|t: &ExprToken| t.is_mul_op());
 
         let inf_mul = fn_parser(move |s| {
@@ -216,7 +214,7 @@ fn parse_expr(s: &str) -> Result<Node, ParseErr<ExprToken>> {
         });
 
         let add_symb = predicate(|t: &ExprToken| t.is_add_op());
-        let expr_parser  = (&inf_mul, (add_symb, &inf_mul)
+        let expr_parser  = (&inf_mul, wrap((add_symb, &inf_mul))
                                                .many().maybe())
                     .then(list_to_tree);
         expr_parser.parse(s)
