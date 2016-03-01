@@ -1,5 +1,5 @@
 // // *
-// // * Module to combinate two or more parsers in different way 
+// // * Module to combinate parsers in different way
 // // *
 use pars::Parse;
 use stream::TokenStream;
@@ -13,7 +13,6 @@ pub type ParseTrait<'a, I, O, E> = Parse<Input=I, Output=O, Error=E> + 'a;
 
 // --------------------------------------------- Nop ---------------------------------------------
 pub struct Nop<I, E>(PhantomData<I>, PhantomData<E>);
-// where  P: Parse, F: Fn(P::Output) -> R
 
 impl<I, E> Parse for Nop<I, E>
     where I: TokenStream,
@@ -53,7 +52,6 @@ pub fn eof<I>() -> Eof<I> {
 }
 
 // --------------------------------------------- Then ---------------------------------------------
-
 pub struct DynamicThen<'a, I, O, E, F>(Box<ParseTrait<'a, I, O, E>>, F);
 impl<'a, I, O, E, F, R> Parse for DynamicThen<'a, I, O, E, F>
     where I: TokenStream,
@@ -194,6 +192,28 @@ impl<P, R> Parse for Many<P, R>
                     .collect());
     }
 }
+
+pub struct AndMany<P1, P2, R>(P1, P2, PhantomData<R>);
+
+impl<P1, P2, I, O, E, R> Parse for AndMany<P1, P2, R>
+    where R: FromIterator<O>,
+         I: SavableStream,
+         P1: Parse<Input=I, Output=O, Error=E>,
+         P2: Parse<Input=I, Output=O, Error=E>,
+{
+    type Input = I;
+    type Output = R;
+    type Error = E;
+    fn parse(&self, tokens: &mut Self::Input) -> Result<Self::Output, Self::Error> {
+        let first = try!(self.0.parse(tokens));
+
+        let mut it = ManyIter { parser: &self.1, input: tokens };
+        return Ok(Some(first).into_iter()
+                    .chain(it)
+                    .collect());
+    }
+}
+
 
 pub struct Many0<P, R>(P, PhantomData<R>);
 
@@ -405,10 +425,22 @@ impl<'a, P, I, O, E> ParserCombDynamic<'a, I, O, E> for P
     where P: Parse<Input=I, Output=O, Error=E> + 'a
 {}
 
+use std::rc::Rc;
+
 pub trait ParserComb: Parse
 where Self: Sized, Self::Input: TokenStream  {
     fn many<R>(self) -> Many<Self, R> {
         Many(self, PhantomData)
+    }
+ //   fn many<R>(self) -> AndMany<Rc<Self>, Many0<Rc<Self>, R>, R> {
+ //       let p = Rc::new(self);
+ //       AndMany(p.clone(), Many0(p, PhantomData), PhantomData)
+ //   }
+
+    fn and_many<R, P>(self, parser: P) -> AndMany<Self, P, R>
+    where P: Parse<Input=Self::Input, Output=Self::Output, Error=Self::Error>
+    {
+        AndMany(self, parser, PhantomData)
     }
 
     fn maybe(self) -> Maybe<Self> {

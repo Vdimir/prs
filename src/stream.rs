@@ -12,7 +12,7 @@ pub trait TokenStream {
 }
 
 pub trait SavableStream: TokenStream {
-    type State;
+    type State: Clone;
     fn save(&self) -> Self::State;
     fn restore(&mut self, Self::State);
 }
@@ -35,7 +35,7 @@ pub mod char_stream {
         source: &'a str,
         position: BytePos,
     }
-
+    #[derive(Clone, Copy)]
     pub struct CharStreamState(BytePos);
 
     impl<'a> SavableStream for CharStream<'a> {
@@ -72,7 +72,7 @@ pub mod char_stream {
         fn range(&self, state: CharStreamState) -> Option<&'a str> {
             let end: usize = self.position;
             match state.0 {
-                beg if beg.le(&end) => Some(&self.source[beg..end]),
+                beg if beg.lt(&end) => Some(&self.source[beg..end]),
                 _ => None,
             }
         }
@@ -98,9 +98,8 @@ pub mod vec_stream {
         source: Vec<T>,
         position: Idx,
     }
-
+    #[derive(Clone,Copy)]
     pub struct VecStreamState(Idx);
-
     impl<T: Clone> SavableStream for VecStream<T> {
         type State = VecStreamState;
         fn save(&self) -> VecStreamState {
@@ -173,7 +172,7 @@ mod tests {
         stream.restore(saved);
 
         let saved = stream.save();
-        assert_eq!(stream.range(saved), Some(""));
+        assert_eq!(stream.range(saved), None);
 
         let saved = stream.save();
         assert_eq!(stream.peek(), Some('ф'));
