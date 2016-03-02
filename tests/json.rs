@@ -5,7 +5,6 @@ use prs::pars::predicate;
 use prs::pars::fn_parser;
 use prs::pars::Parse;
 use prs::comb::many;
-use prs::comb::skip_first;
 
 use prs::comb::ParserComb;
 use std::collections::HashMap;
@@ -13,7 +12,6 @@ use std::collections::HashMap;
 use prs::stream::char_stream::CharStream;
 use prs::stream::RangeStream;
 use prs::result::ParseErr;
-use std::rc::Rc;
 
 #[allow(dead_code)]
 #[derive(PartialEq, Clone, Debug)]
@@ -34,6 +32,11 @@ fn json_parse(input: &str) -> Result<JsonValue, String>  {
     fn num_f<'a, S>(tokens: &mut S) -> Result<f64, ParseErr<char>>
         where S: RangeStream<Token=char, Range=&'a str>
     {
+//        let zero = Token('0');
+//        let dig = predicate(|c| char::is_digit(*c, 10) );
+//        let dig19 = predicate(|c| char::is_digit(*c, 10) && *c != '0');
+//        zero.or(
+
         let save = tokens.save();
         loop {
             match tokens.peek() {
@@ -49,11 +52,11 @@ fn json_parse(input: &str) -> Result<JsonValue, String>  {
     }
 
     fn object_f(tokens: &mut CharStream) -> Result<JsonValue, ParseErr<char>> {
-        let ws = Rc::new(predicate(|c| char::is_whitespace(*c)));
+        let ws = wrap(predicate(|c| char::is_whitespace(*c)));
         let iden = predicate(|c| char::is_alphanumeric(*c));
-        let quoted_str = Rc::new(wrap((Token('\"'), many::<_,String>(iden).skip(Token('\"'))
+        let quoted_str = wrap((Token('\"'), many::<_,String>(iden).skip(Token('\"'))
                                   .skip_any(ws.clone()))
-                                  .then(|(_, s)| s)));
+                                  .then(|(_, s)| s));
 
         let value = wrap(quoted_str.clone().then(JsonValue::Str))
                         .or(fn_parser(num_f).then(JsonValue::Num))

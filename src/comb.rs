@@ -11,7 +11,6 @@ use result::SupressedRes;
 
 pub type ParseTrait<'a, I, O, E> = Parse<Input=I, Output=O, Error=E> + 'a;
 
-// --------------------------------------------- Nop ---------------------------------------------
 pub struct Nop<I, E>(PhantomData<I>, PhantomData<E>);
 
 impl<I, E> Parse for Nop<I, E>
@@ -29,7 +28,6 @@ pub fn nop<I, E>() -> Nop<I, E> {
     Nop(PhantomData,PhantomData)
 }
 
-// --------------------------------------------- Eof ---------------------------------------------
 pub struct Eof<I>(PhantomData<I>);
 impl<I> Parse for Eof<I>
     where I: TokenStream,
@@ -49,7 +47,6 @@ pub fn eof<I>() -> Eof<I> {
     Eof(PhantomData)
 }
 
-// --------------------------------------------- Then ---------------------------------------------
 pub struct Then<P, F>(P, F);
 impl<F, P, R> Parse for Then<P, F>
     where P: Parse,
@@ -77,8 +74,6 @@ impl<E, P> Parse for OnError<P, E>
     }
 }
 
-
-// ---------------------------------------------- Or ----------------------------------------------
 pub struct Or<P1, P2>(pub P1, pub P2);
 impl<R, T, P1, P2> Parse for Or<P1, P2>
     where P1: Parse<Input=T, Output = R>,
@@ -103,7 +98,6 @@ impl<R, T, P1, P2> Parse for Or<P1, P2>
     }
 }
 
-// -------------------------------------------- Many ----------------------------------------------
 struct ManyIter<'a, P: 'a, I: 'a> {
     parser: &'a P,
     input: &'a mut I
@@ -145,25 +139,6 @@ impl<P, R> Parse for Many<P, R>
     }
 }
 
-pub struct AndMany<P1, P2, R>(P1, P2, PhantomData<R>);
-impl<P1, P2, I, O, E, R> Parse for AndMany<P1, P2, R>
-    where R: FromIterator<O>,
-         I: SavableStream,
-         P1: Parse<Input=I, Output=O, Error=E>,
-         P2: Parse<Input=I, Output=O, Error=E>,
-{
-    type Input = I;
-    type Output = R;
-    type Error = E;
-    fn parse(&self, tokens: &mut Self::Input) -> Result<Self::Output, Self::Error> {
-        let first = try!(self.0.parse(tokens));
-        let mut it = ManyIter { parser: &self.1, input: tokens };
-        return Ok(Some(first).into_iter()
-                    .chain(it)
-                    .collect());
-    }
-}
-
 pub struct Many0<P, R>(P, PhantomData<R>);
 impl<P, R> Parse for Many0<P, R>
 where P::Input: SavableStream,
@@ -178,8 +153,6 @@ where P::Input: SavableStream,
         Ok(it.collect())
     }
 }
-
-// -------------------------------------------- Skip ----------------------------------------------
 
 pub struct SkipAny<P1, P2>(P1,P2);
 impl<P1, P2, I, E> Parse for SkipAny<P1, P2>
@@ -201,9 +174,7 @@ where I: SavableStream,
     }
 }
 
-// ----------------------------------------- Maybe ------------------------------------------
 pub struct Maybe<P>(P);
-
 impl<P> Parse for Maybe<P>
     where P: Parse,
 {
@@ -241,28 +212,33 @@ macro_rules! impl_tup {
 impl_tup!(a,b);
 impl_tup!(a,b,c);
 
-pub struct Wrap<'a, I, O, E>(Box<Parse<Input=I, Output=O, Error=E> + 'a>);
+pub struct Wrap<'a, I, O, E>(Rc<Parse<Input=I, Output=O, Error=E> + 'a>);
+
+impl<'a, I, O, E> Clone for Wrap<'a, I, O, E>{
+    fn clone(&self) -> Self {
+        Wrap(self.0.clone())
+    }
+}
+
 impl<'a, I, O, E> Parse for Wrap<'a, I, O, E>
 {
-
     type Input = I;
     type Output = O;
     type Error = E;
 
-    fn parse(&self, tokens: &mut I) -> Result<O, E>
-    {
+    fn parse(&self, tokens: &mut I) -> Result<O, E> {
         self.0.parse(tokens)
     }
-
 }
+
+use std::rc::Rc;
 
 pub fn wrap<'a, P>(p: P) -> Wrap<'a, P::Input, P::Output, P::Error>
 where P: Parse+'a
 {
-    Wrap(Box::new(p))
+    Wrap(Rc::new(p))
 }
 
-// ----------------------------------------- Constructor ------------------------------------------
 pub trait ParserComb: Parse
 where Self: Sized, {
     fn or<P: Parse>(self, parser: P) -> Or<Self, P> {
@@ -302,16 +278,6 @@ impl<P> ParserComb for P
     where P: Parse + Sized,
 {}
 
-
-pub fn skip_first<I, E, P1, P2>(a: P1, b: P2) ->
-                                Then<(P1, P2), fn((P1::Output, P2::Output)) -> P2::Output>
-where P1: Parse<Input=I, Error=E>,
-      P2: Parse<Input=I, Error=E>
-{
-    fn second<A,B>((_,b): (A,B)) -> B { b }
-    Then((a, b), second)
-}
-
 pub fn many<P, R>(p: P) -> Many<P, R> {
     Many(p, PhantomData)
 }
@@ -319,5 +285,4 @@ pub fn many<P, R>(p: P) -> Many<P, R> {
 pub fn maybe<P>(p: P) -> Maybe<P> {
     Maybe(p)
 }
-
 
