@@ -5,12 +5,14 @@ use prs::pars::predicate;
 use prs::pars::fn_parser;
 use prs::pars::Parse;
 use prs::comb::many;
+use prs::comb::maybe;
 
 use prs::comb::ParserComb;
 use std::collections::HashMap;
 
 use prs::stream::char_stream::CharStream;
 use prs::stream::RangeStream;
+use prs::stream::TokenStream;
 use prs::result::ParseErr;
 
 #[allow(dead_code)]
@@ -29,28 +31,6 @@ use prs::comb::wrap;
 fn json_parse(input: &str) -> Result<JsonValue, String>  {
     let stream = &mut CharStream::new(input);
 
-    fn num_f<'a, S>(tokens: &mut S) -> Result<f64, ParseErr<char>>
-        where S: RangeStream<Token=char, Range=&'a str>
-    {
-//        let zero = Token('0');
-//        let dig = predicate(|c| char::is_digit(*c, 10) );
-//        let dig19 = predicate(|c| char::is_digit(*c, 10) && *c != '0');
-//        zero.or(
-
-        let save = tokens.save();
-        loop {
-            match tokens.peek() {
-                Some('0'...'9') => tokens.next(),
-                _ => break
-            };
-        }
-        if let Some(s) = tokens.range(save) {
-            Ok(s.parse::<f64>().unwrap())
-        } else {
-            Err(ParseErr::unexpected(tokens.peek()).at(tokens.position()))
-        }
-    }
-
     fn object_f(tokens: &mut CharStream) -> Result<JsonValue, ParseErr<char>> {
         let ws = wrap(predicate(|c| char::is_whitespace(*c)));
         let iden = predicate(|c| char::is_alphanumeric(*c));
@@ -58,8 +38,31 @@ fn json_parse(input: &str) -> Result<JsonValue, String>  {
                                   .skip_any(ws.clone()))
                                   .then(|(_, s)| s));
 
+        #[derive(PartialEq)]
+        enum Signum {
+            Posititive,
+            Negative
+        }
+        let sign = wrap(maybe(Token('+').or(Token('-'))).then(|c| if c == Some('-')
+                                                         { Signum::Negative}
+                                                         else { Signum::Posititive }));
+        let zero = Token('0').then(|_| "0".to_owned());
+        let digs = wrap(many::<_,String>(predicate(|c| char::is_digit(*c, 10) )));
+        let integer = zero.or(digs.clone())
+            .then(|s| s.chars()
+                  .map(|c| c.to_digit(10).unwrap() as i64)
+                  .fold(0, |n, a| n*10 + a));
+        let frac = maybe((Token('.'), digs.clone()).then(|(_,s)| s.chars()
+                      .map(|c| c.to_digit(10).unwrap() as f64)
+                      .fold((0.0, 1), |n, a| (n.0 + a/10f64.powi(n.1) , n.1 + 1)).0));
+        let number = (sign,
+                      (wrap(integer.then(|n| n as f64)),
+                      wrap(frac))
+                        .then(|(n, c)| n+c.unwrap_or(0.0f64)))
+            .then(|(s, n)| if s == Signum::Negative { -n } else { n });
+
         let value = wrap(quoted_str.clone().then(JsonValue::Str))
-                        .or(fn_parser(num_f).then(JsonValue::Num))
+                        .or(number.then(JsonValue::Num))
                         .or(fn_parser(object_f))
                         .skip_any(ws.clone());
         let kv_pair = wrap((quoted_str.skip(Token(':').skip_any(ws.clone())), value));
@@ -78,14 +81,16 @@ fn json_parse(input: &str) -> Result<JsonValue, String>  {
 #[test]
 fn json_test() {
     let mut sub_obj: HashMap<String, JsonValue> = HashMap::new();
-    sub_obj.insert("first".to_owned(), JsonValue::Num(123_f64));
+    sub_obj.insert("first".to_owned(), JsonValue::Num(1023_f64));
     sub_obj.insert("second".to_owned(), JsonValue::Str("two".to_owned()));
 
     let mut res = HashMap::new();
     res.insert("ob1".to_owned(), JsonValue::Object(sub_obj));
     res.insert("second".to_owned(), JsonValue::Str("001".to_owned()));
+    res.insert("float".to_owned(), JsonValue::Num(3.14159_f64));
+    res.insert("neg".to_owned(), JsonValue::Num(-0.5));
 
-    let parsed = json_parse("{    \"ob1\" : { \"first\" : 123, \"second\" : \"two\", }, \"second\" : \"001\", } ");
+    let parsed = json_parse("{    \"ob1\" : { \"first\" : 1023, \"second\" : \"two\", }, \"second\" : \"001\", \"float\": 3.14159, \"neg\": -0.5,} ");
     assert_eq!(parsed.unwrap(), JsonValue::Object(res));
 }
 
