@@ -282,6 +282,10 @@ pub fn many<P, R>(p: P) -> Many<P, R> {
     Many(p, PhantomData)
 }
 
+pub fn many0<P, R>(p: P) -> Many0<P, R> {
+    Many0(p, PhantomData)
+}
+
 pub fn maybe<P>(p: P) -> Maybe<P> {
     Maybe(p)
 }
