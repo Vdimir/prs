@@ -7,6 +7,7 @@ use prs::pars::predicate;
 use prs::comb::ParserComb;
 use prs::comb::many;
 use prs::comb::maybe;
+use prs::comb::Seq;
 use prs::stream::char_stream::CharStream;
 use prs::stream::TokenStream;
 
@@ -85,6 +86,24 @@ fn tup_test() {
     let x_and_y = (Token('x'), Token('y'), Token('z'));
 
     assert_eq!(x_and_y.parse(&mut CharStream::new("xyzx")), Ok(('x', 'y', 'z')));
+
+    let input = &mut CharStream::new("yxx");
+    assert_eq!(x_and_y.parse(input), Err(UnexpectedAt('y', 0)));
+    assert_eq!(input.peek(), Some('y'));
+
+    let input = &mut CharStream::new("xyy");
+    assert_eq!(x_and_y.parse(input), Err(UnexpectedAt('y', 2)));
+    assert_eq!(input.peek(), Some('x'));
+}
+
+#[test]
+fn and_test() {
+    let x_and_y = Seq::new()
+            .and(Token('x'))
+            .and(Token('y'))
+            .and(Token('z'));
+
+    assert_eq!(x_and_y.parse(&mut CharStream::new("xyzx")), Ok(vec!('x', 'y', 'z')));
 
     let input = &mut CharStream::new("yxx");
     assert_eq!(x_and_y.parse(input), Err(UnexpectedAt('y', 0)));

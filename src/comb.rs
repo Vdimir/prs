@@ -9,6 +9,8 @@ use stream::SavableStream;
 use result::ParseErr;
 use result::SupressedRes;
 
+use std::rc::Rc;
+
 pub type ParseTrait<'a, I, O, E> = Parse<Input=I, Output=O, Error=E> + 'a;
 
 pub struct Nop<I, E>(PhantomData<I>, PhantomData<E>);
@@ -76,7 +78,7 @@ impl<E, P> Parse for OnError<P, E>
 
 pub struct Or<P1, P2>(pub P1, pub P2);
 impl<R, T, P1, P2> Parse for Or<P1, P2>
-    where P1: Parse<Input=T, Output = R>,
+    where P1: Parse<Input=T, Output = R, Error=ParseErr<T::Token>>,
           P2: Parse<Input=T, Output = R, Error=ParseErr<T::Token>>,
           T: TokenStream
 {
@@ -91,7 +93,7 @@ impl<R, T, P1, P2> Parse for Or<P1, P2>
                 match self.1.parse(tokens) {
                     Ok(v) => Ok(v),
                     // TODO combine e0 and e1
-                    Err(e1) => Err(e1),
+                    Err(e1) => Err(e0),
                 }
             },
         }
@@ -211,6 +213,48 @@ macro_rules! impl_tup {
 
 impl_tup!(a,b);
 impl_tup!(a,b,c);
+impl_tup!(a,b,c,d);
+
+
+pub struct Seq<'a, I, R, O, E> {
+    parsers: Vec<Box<ParseTrait<'a, I, O, E>>>,
+    _phantom: PhantomData<R>
+}
+
+impl<'a, I, R, O, E> Seq<'a, I, R, O, E> {
+    pub fn new() -> Self {
+        Seq {
+            parsers: Vec::new(),
+            _phantom: PhantomData,
+        }
+    }
+
+    pub fn and<P>(mut self, parser: P) -> Self
+    where P: Parse<Input=I, Output=O, Error=E> + 'a
+    {
+        self.parsers.push(Box::new(parser));
+        self
+    }
+}
+
+impl<'a, I, R, O, E> Parse for Seq<'a, I, R, O, E>
+where I: SavableStream,
+      R: FromIterator<O>
+{
+    type Input = I;
+    type Output = R;
+    type Error = E;
+
+    fn parse(&self, tokens: &mut I) -> Result<R, E> {
+        let save = tokens.save();
+        let res: Result<R, E> = self.parsers.iter().map(|p| p.parse(tokens)).collect();
+        if res.is_err() {
+            tokens.restore(save);
+        }
+        res
+    }
+}
+
 
 pub struct Wrap<'a, I, O, E>(Rc<Parse<Input=I, Output=O, Error=E> + 'a>);
 
@@ -230,8 +274,6 @@ impl<'a, I, O, E> Parse for Wrap<'a, I, O, E>
         self.0.parse(tokens)
     }
 }
-
-use std::rc::Rc;
 
 pub fn wrap<'a, P>(p: P) -> Wrap<'a, P::Input, P::Output, P::Error>
 where P: Parse+'a

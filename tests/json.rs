@@ -7,6 +7,7 @@ use prs::pars::Parse;
 use prs::comb::many;
 use prs::comb::many0;
 use prs::comb::maybe;
+use prs::comb::Seq;
 
 use prs::comb::ParserComb;
 use std::collections::HashMap;
@@ -15,7 +16,8 @@ use prs::stream::char_stream::CharStream;
 use prs::stream::RangeStream;
 use prs::stream::TokenStream;
 use prs::result::ParseErr;
-
+use prs::result::SupressedRes;
+use std::iter::FromIterator;
 #[allow(dead_code)]
 #[derive(PartialEq, Clone, Debug)]
 enum JsonValue {
@@ -30,10 +32,30 @@ enum JsonValue {
 
 use prs::comb::wrap;
 use prs::comb::Wrap;
+use std::convert::Into;
+use std::ops::Neg;
 
 fn json_parse(input: &str) -> Result<JsonValue, String>  {
     let stream = &mut CharStream::new(input);
 
+    // Panic if string containt non digit characters
+    fn parse_int<S: Into<String>>(s: S) -> i64 {
+        s.into().chars()
+              .map(|c| c.to_digit(10).unwrap() as i64)
+              .fold(0, |n, a| n*10 + a)
+    }
+    // Panic if string containt non digit characters
+    fn parse_frac<S: Into<String>>(s: S) -> f64 {
+        let mut n = parse_int(s) as f64;
+        while n > 1.0 {
+            n /= 10.0
+        }
+        n
+    }
+
+    fn digs<'a>() -> Wrap<'a, CharStream<'a>, String, ParseErr<char>> {
+        wrap(many::<_,String>(predicate(|c| char::is_digit(*c, 10) )))
+    }
 
     fn num<'a>() -> Wrap<'a, CharStream<'a>, f64, ParseErr<char>> {
         #[derive(PartialEq)]
@@ -41,23 +63,24 @@ fn json_parse(input: &str) -> Result<JsonValue, String>  {
             Posititive,
             Negative
         }
+
+        impl Signum {
+            fn signify<T: Neg<Output=T>>(&self, n: T) -> T {
+                match *self {
+                    Signum::Posititive => n,
+                    Signum::Negative => -n
+                }
+            }
+        }
         let sign = wrap(maybe(Token('+').or(Token('-')))
                         .then(|c| if c == Some('-') { Signum::Negative } else { Signum::Posititive }));
         let zero = Token('0').then(|_| "0".to_owned());
-        let digs = wrap(many::<_,String>(predicate(|c| char::is_digit(*c, 10) )));
-        let integer = zero.or(digs.clone())
-            .then(|s| s.chars()
-                  .map(|c| c.to_digit(10).unwrap() as i64)
-                  .fold(0, |n, a| n*10 + a));
-        let frac = maybe((Token('.'), digs.clone()).then(|(_,s)| s.chars()
-                      .map(|c| c.to_digit(10).unwrap() as f64)
-                      .fold((0.0, 1), |n, a| (n.0 + a/10f64.powi(n.1) , n.1 + 1)).0))
-            .then(|r| r.unwrap_or(0.0));
-        let number = (sign,
-                      (wrap(integer.then(|n| n as f64)),
-                      wrap(frac))
-                        .then(|(n, c)| n+c))
-            .then(|(s, n)| if s == Signum::Negative { -n } else { n });
+        let integer = zero.or(digs()).then(parse_int);
+        let frac = (Token('.'), digs()).then(|(_,s)| parse_frac(s));
+        let unsigned = (integer, maybe(frac).then(|m| m.unwrap_or(0.0)))
+                        .then(|(n, c)| n as f64 + c);
+        let number = (sign, unsigned)
+            .then(|(s, n)| s.signify(n));
         return wrap(number);
     }
 
@@ -66,11 +89,33 @@ fn json_parse(input: &str) -> Result<JsonValue, String>  {
     }
 
     fn q_str<'a>() ->  Wrap<'a, CharStream<'a>, String, ParseErr<char>> {
-        let iden = predicate(|c| char::is_alphanumeric(*c) || *c == '_');
-        let quoted_str = wrap((Token('\"'), many::<_,String>(iden).skip(Token('\"'))
-                                  .skip_any(ws()))
-                                  .then(|(_, s)| s));
-        wrap(quoted_str)
+        let iden = predicate(|c| *c != '"');
+        let quoted_str = (Token('"'),
+                    many0::<_,String>(iden),
+                    Token('"'))
+                .then(|(_, s, _)| s);
+        wrap(quoted_str
+             .skip_any(ws()))
+    }
+
+    fn keyword<'a>() -> Wrap<'a, CharStream<'a>, JsonValue, ParseErr<char>> {
+        let tru = Seq::new().and(Token('t'))
+                        .and(Token('r'))
+                        .and(Token('u'))
+                        .and(Token('e'))
+                        .then(|x: SupressedRes| JsonValue::True);
+        let fals = Seq::new().and(Token('f'))
+                        .and(Token('a'))
+                        .and(Token('l'))
+                        .and(Token('s'))
+                        .and(Token('e'))
+                        .then(|x: SupressedRes| JsonValue::False);
+        let nul = Seq::new().and(Token('n'))
+                        .and(Token('u'))
+                        .and(Token('l'))
+                        .and(Token('l'))
+                        .then(|x: SupressedRes| JsonValue::Null);
+        return wrap(tru.or(fals).or(nul));
     }
 
     fn value_f(tokens: &mut CharStream) -> Result<JsonValue, ParseErr<char>>
@@ -79,15 +124,20 @@ fn json_parse(input: &str) -> Result<JsonValue, String>  {
         .or(num().then(JsonValue::Num))
         .or(fn_parser(object_f))
         .or(fn_parser(array_f))
+        .or(keyword())
         .skip_any(ws())
         .parse(tokens)
     }
 
     fn array_f(tokens: &mut CharStream) -> Result<JsonValue, ParseErr<char>>
     {
+        let delim = Token(',').skip_any(ws());
+        let list = wrap((many0(fn_parser(value_f).skip(delim)),
+            fn_parser(value_f))
+            .then(|(mut v, r):(Vec<_>,_)| { v.push(r); v }));
         (Token('[').skip_any(ws()),
-            many0(fn_parser(value_f).skip(Token(',').skip_any(ws()))),
-            Token(']').skip_any(ws()))
+        maybe(list).then(|r| r.unwrap_or(Vec::new())),
+        Token(']').skip_any(ws()))
         .then(|(_, a, _)| JsonValue::Array(a))
         .parse(tokens)
     }
@@ -95,9 +145,14 @@ fn json_parse(input: &str) -> Result<JsonValue, String>  {
     fn object_f(tokens: &mut CharStream) -> Result<JsonValue, ParseErr<char>> {
         let value = fn_parser(value_f);
         let kv_pair = wrap((q_str().skip(Token(':').skip_any(ws())), value));
+        let delim = Token(',').skip_any(ws());
+        let list = wrap((many0(kv_pair.clone().skip(delim)),
+            kv_pair.clone())
+            .then(|(mut v, r):(Vec<_>,_)| { v.push(r); v }));
 
         (Token('{').skip_any(ws()),
-        wrap(many0(kv_pair.skip(Token(',').skip_any(ws()))).then(JsonValue::Object)),
+        maybe(list).then(|r| HashMap::from_iter(r.unwrap_or(Vec::new())))
+            .then(JsonValue::Object),
         Token('}').skip_any(ws()))
             .then(|(_,a,_)| a)
             .parse(tokens)
@@ -107,38 +162,56 @@ fn json_parse(input: &str) -> Result<JsonValue, String>  {
     return res.map_err(|e| format!("{}", e))
 }
 
-
 #[test]
 fn json_test() {
+    use JsonValue::*;
     let mut sub_obj: HashMap<String, JsonValue> = HashMap::new();
-    sub_obj.insert("first".to_owned(), JsonValue::Num(1023_f64));
-    sub_obj.insert("second".to_owned(), JsonValue::Str("two".to_owned()));
+    sub_obj.insert("first".to_owned(), Num(1023_f64));
+    sub_obj.insert("second".to_owned(), Str("two".to_owned()));
 
     let mut res = HashMap::new();
-    res.insert("ob1".to_owned(), JsonValue::Object(sub_obj));
-    res.insert("second".to_owned(), JsonValue::Str("001".to_owned()));
-    res.insert("float".to_owned(), JsonValue::Num(3.14159_f64));
-    res.insert("neg".to_owned(), JsonValue::Num(-0.5));
-    res.insert("empty_obj".to_owned(), JsonValue::Object(HashMap::new()));
-    res.insert("arr".to_owned(), JsonValue::Array(vec![
-                                                JsonValue::Num(1.0),
-                                                JsonValue::Num(2.0),
-                                                JsonValue::Str("three".to_owned()),
-                                                JsonValue::Num(-4.0),
-                                                JsonValue::Object(HashMap::new()),
+    res.insert("ob1".to_owned(), Object(sub_obj));
+    res.insert("second".to_owned(), Str("001".to_owned()));
+    res.insert("float".to_owned(), Num(3.14159_f64));
+    res.insert("neg".to_owned(), Num(-0.5));
+    res.insert("empty_obj".to_owned(), Object(HashMap::new()));
+    res.insert("arr".to_owned(), Array(vec![ Num(1.0),
+                                        Num(2.0),
+                                        Str("three".to_owned()),
+                                        Num(-4.0),
+                                        Object(HashMap::new()),
+                                        True,
                                     ]));
+    res.insert("nil".to_owned(), Null);
 
     let parsed = json_parse(r#"{
         "ob1": {
                 "first" : 1023,
-                "second" : "two",
+                "second" : "two"
                 },
         "second" : "001",
         "float": 3.14159,
         "neg": -0.5,
         "empty_obj" : { },
-        "arr": [ 1, 2.0, "three", -4, { },],
+        "arr": [ 1, 2.0, "three", -4, { }, true],
+        "nil" : null
     }"#);
     assert_eq!(parsed.unwrap(), JsonValue::Object(res));
+}
+
+use std::error::Error;
+use std::io::Read;
+use std::fs::File;
+use std::path::Path;
+
+#[test]
+fn json_file_test() {
+    let mut data = String::new();
+    File::open(&Path::new("data.json"))
+        .and_then(|mut file| file.read_to_string(&mut data))
+        .unwrap();
+    let parsed = json_parse(&data);
+
+    assert!(parsed.is_ok());
 }
 
