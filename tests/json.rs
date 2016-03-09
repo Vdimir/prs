@@ -1,24 +1,17 @@
 
 extern crate prs;
-use prs::pars::Token;
-use prs::pars::predicate;
-use prs::pars::fn_parser;
-use prs::pars::Parse;
-use prs::comb::many;
-use prs::comb::many0;
-use prs::comb::maybe;
-use prs::comb::Seq;
-
-use prs::comb::ParserComb;
-use std::collections::HashMap;
+use prs::pars::{Token, predicate, fn_parser, Parse };
+use prs::comb::{ParserComb, many, many0, maybe, Seq, wrap, Wrap };
 
 use prs::stream::char_stream::CharStream;
-use prs::stream::RangeStream;
-use prs::stream::TokenStream;
-use prs::result::ParseErr;
-use prs::result::SupressedRes;
+use prs::stream::{ RangeStream, TokenStream };
+use prs::result::{ ParseErr, SupressedRes };
+
 use std::iter::FromIterator;
-#[allow(dead_code)]
+use std::collections::HashMap;
+use std::convert::Into;
+use std::ops::Neg;
+
 #[derive(PartialEq, Clone, Debug)]
 enum JsonValue {
     Str(String),
@@ -30,11 +23,6 @@ enum JsonValue {
     Null,
 }
 
-use prs::comb::wrap;
-use prs::comb::Wrap;
-use std::convert::Into;
-use std::ops::Neg;
-
 fn json_parse(input: &str) -> Result<JsonValue, String>  {
     let stream = &mut CharStream::new(input);
 
@@ -44,7 +32,6 @@ fn json_parse(input: &str) -> Result<JsonValue, String>  {
               .map(|c| c.to_digit(10).unwrap() as i64)
               .fold(0, |n, a| n*10 + a)
     }
-    // Panic if string containt non digit characters
     fn parse_frac<S: Into<String>>(s: S) -> f64 {
         let mut n = parse_int(s) as f64;
         while n > 1.0 {
@@ -58,29 +45,19 @@ fn json_parse(input: &str) -> Result<JsonValue, String>  {
     }
 
     fn num<'a>() -> Wrap<'a, CharStream<'a>, f64, ParseErr<char>> {
-        #[derive(PartialEq)]
-        enum Signum {
-            Posititive,
-            Negative
-        }
-
-        impl Signum {
-            fn signify<T: Neg<Output=T>>(&self, n: T) -> T {
-                match *self {
-                    Signum::Posititive => n,
-                    Signum::Negative => -n
-                }
-            }
-        }
         let sign = wrap(maybe(Token('+').or(Token('-')))
-                        .then(|c| if c == Some('-') { Signum::Negative } else { Signum::Posititive }));
+                        .then(|c| c.unwrap_or('+')));
+
         let zero = Token('0').then(|_| "0".to_owned());
-        let integer = zero.or(digs()).then(parse_int);
-        let frac = (Token('.'), digs()).then(|(_,s)| parse_frac(s));
+        let integer = zero
+                      .or(digs())
+                      .then(parse_int);
+        let frac = (Token('.'), digs())
+                    .then(|(_,s)| parse_frac(s));
         let unsigned = (integer, maybe(frac).then(|m| m.unwrap_or(0.0)))
                         .then(|(n, c)| n as f64 + c);
         let number = (sign, unsigned)
-            .then(|(s, n)| s.signify(n));
+            .then(|(s, n)| if s == '+' { n } else { -n });
         return wrap(number);
     }
 
@@ -94,27 +71,23 @@ fn json_parse(input: &str) -> Result<JsonValue, String>  {
                     many0::<_,String>(iden),
                     Token('"'))
                 .then(|(_, s, _)| s);
-        wrap(quoted_str
-             .skip_any(ws()))
+        wrap(quoted_str.skip_any(ws()))
     }
 
-    fn keyword<'a>() -> Wrap<'a, CharStream<'a>, JsonValue, ParseErr<char>> {
-        let tru = Seq::new().and(Token('t'))
-                        .and(Token('r'))
-                        .and(Token('u'))
-                        .and(Token('e'))
-                        .then(|x: SupressedRes| JsonValue::True);
-        let fals = Seq::new().and(Token('f'))
+    fn keyword<'a, 'b: 'a>() -> Wrap<'a, CharStream<'b>, JsonValue, ParseErr<char>> {
+        let tru = (Token('t')).and(Token('r')).and(Token('u')).and(Token('e'))
+                        .then(|_: SupressedRes| JsonValue::True);
+        let fals = (Token('f'))
                         .and(Token('a'))
                         .and(Token('l'))
                         .and(Token('s'))
                         .and(Token('e'))
-                        .then(|x: SupressedRes| JsonValue::False);
-        let nul = Seq::new().and(Token('n'))
+                        .then(|_: SupressedRes| JsonValue::False);
+        let nul = (Token('n'))
                         .and(Token('u'))
                         .and(Token('l'))
                         .and(Token('l'))
-                        .then(|x: SupressedRes| JsonValue::Null);
+                        .then(|_: SupressedRes| JsonValue::Null);
         return wrap(tru.or(fals).or(nul));
     }
 
@@ -144,14 +117,19 @@ fn json_parse(input: &str) -> Result<JsonValue, String>  {
 
     fn object_f(tokens: &mut CharStream) -> Result<JsonValue, ParseErr<char>> {
         let value = fn_parser(value_f);
-        let kv_pair = wrap((q_str().skip(Token(':').skip_any(ws())), value));
+        let kv_pair = wrap((q_str()
+                            .skip(Token(':').skip_any(ws())),
+                            value));
         let delim = Token(',').skip_any(ws());
+        // ( k:v,)* k:v
         let list = wrap((many0(kv_pair.clone().skip(delim)),
             kv_pair.clone())
             .then(|(mut v, r):(Vec<_>,_)| { v.push(r); v }));
 
         (Token('{').skip_any(ws()),
-        maybe(list).then(|r| HashMap::from_iter(r.unwrap_or(Vec::new())))
+        maybe(list)
+            .then(|r| r.unwrap_or(Vec::new()))
+            .then(HashMap::from_iter)
             .then(JsonValue::Object),
         Token('}').skip_any(ws()))
             .then(|(_,a,_)| a)
@@ -177,7 +155,7 @@ fn json_test() {
     res.insert("empty_obj".to_owned(), Object(HashMap::new()));
     res.insert("arr".to_owned(), Array(vec![ Num(1.0),
                                         Num(2.0),
-                                        Str("three".to_owned()),
+                                        Str("three".into()),
                                         Num(-4.0),
                                         Object(HashMap::new()),
                                         True,
@@ -199,7 +177,6 @@ fn json_test() {
     assert_eq!(parsed.unwrap(), JsonValue::Object(res));
 }
 
-use std::error::Error;
 use std::io::Read;
 use std::fs::File;
 use std::path::Path;

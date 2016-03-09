@@ -1,19 +1,18 @@
 
-// #![feature(box_patterns)]
-
 extern crate prs;
 
 use prs::pars::{Token, Parse, predicate, fn_parser};
 use prs::stream::char_stream::CharStream;
 use prs::stream::vec_stream::VecStream;
 use prs::comb::ParserComb;
-use prs::comb::{eof, many, maybe, wrap};
+use prs::comb::{eof, many, maybe, wrap, many0, Seq};
 use prs::result::ParseErr;
-use prs::stream::TokenStream;
+
+use std::collections::HashMap;
 
 #[derive(PartialEq, Debug, Clone)]
 enum ExprToken {
-    Num(u32),
+    Num(i32),
     Iden(String),
     Add,
     Sub,
@@ -24,20 +23,18 @@ enum ExprToken {
 }
 
 impl ExprToken {
-    fn num(self) -> u32 {
+    fn num(self) -> i32 {
         match self {
-            ExprToken::Num(n) => Ok(n),
-            _ => Err("not a number"),
+            ExprToken::Num(n) => n,
+            _ => panic!("not a number"),
         }
-        .unwrap()
     }
 
     fn iden(self) -> String {
         match self {
-            ExprToken::Iden(s) => Ok(s),
-            _ => Err("not a identifier"),
+            ExprToken::Iden(s) => s,
+            _ => panic!("not a identifier"),
         }
-        .unwrap()
     }
 
     fn is_num(&self) -> bool {
@@ -70,56 +67,32 @@ impl ExprToken {
 }
 
 fn tokenize(input: &str) -> Result<Vec<ExprToken>, ParseErr<char>> {
+    use ExprToken::*;
     let stream = &mut CharStream::new(input);
 
-    let op_symb = wrap(Token('+').then(|_| ExprToken::Add)
-                  .or(wrap(Token('-').then(|_| ExprToken::Sub)
-                  .or(wrap(Token('*').then(|_| ExprToken::Mul)))))
-                  .or(wrap(Token('/').then(|_| ExprToken::Div))));
+    let plus    = Token('+').then(|_| Add);
+    let minus   = Token('-').then(|_| Sub);
+    let mul     = Token('*').then(|_| Mul);
+    let div     = Token('/').then(|_| Div);
+    let l_paren = Token('(').then(|_| LParen);
+    let r_paren = Token(')').then(|_| RParen);
 
-    let paren = wrap(Token('(').then(|_| ExprToken::LParen)
-                .or(wrap(Token(')').then(|_| ExprToken::RParen))));
+    let op_symb = wrap(plus.or(minus).or(mul).or(div));
+    let paren = l_paren.or(r_paren);
+    let digit = wrap(predicate(|c: &char| c.is_digit(10)));
 
-    let digit = predicate(|c: &char| c.is_digit(10));
+    let num = many(digit.clone())
+                .then(|s: String| s.parse::<i32>().unwrap())
+                .then(Num);
 
-    let num = wrap(digit.many()
-                .then(|s: String| ExprToken::Num(s.parse::<u32>().unwrap())));
+    let letter = predicate(|c| char::is_alphabetic(*c))
+                        .then(|c: char| c.to_string());
+    let letdig = predicate(|c| char::is_alphanumeric(*c));
+    let iden = letter.and(many0(letdig))
+                .then(|s| Iden(s));
+    let lexem = wrap(op_symb.or(num).or(iden).or(paren));
 
-
-
-    fn alphabetic(c: char) -> Option<char> {
-        if c.is_alphabetic() { Some(c) } else { None }
-    }
-
-    fn alphanumeric(c: char) -> Option<char> {
-        if c.is_alphanumeric() { Some(c) } else { None }
-    }
-
-    fn iden_f(input: &mut CharStream) -> Result<ExprToken, ParseErr<char>> {
-        if let Some(_) = input.peek().and_then(|c| alphabetic(c)) {
-            let mut res = String::new();
-            while let Some(alph) = input.peek().and_then(|c| alphanumeric(c)) {
-                res.push(alph);
-                input.next();
-            }
-            Ok(ExprToken::Iden(res))
-        } else {
-            Err(ParseErr::unexpected(input.peek()))
-        }
-
-    }
-    let iden = fn_parser(iden_f);
-
-    let lexem = wrap(op_symb
-                .or(wrap(num))
-                .or(wrap(iden)))
-                .or(wrap(paren));
-
-    let lexer = many(
-        wrap(lexem.skip_any(Token(' ')))
-        )
-        .skip(eof());
-
+    let lexer = many(lexem.skip_any(Token(' '))).skip(eof());
     return lexer.parse(stream);
 }
 
@@ -140,33 +113,19 @@ fn tokenize_test() {
     assert!(tokenize("150 % 2").is_err());
 }
 
-type BoxPair<T> = Box<(T, T)>;
-
 #[derive(PartialEq, Debug)]
 enum Node {
-    Num(u32),
+    Num(i32),
     Iden(String),
-    Add(BoxPair<Node>),
-    Sub(BoxPair<Node>),
-    Mul(BoxPair<Node>),
-    Div(BoxPair<Node>),
+    Add(Box<(Node, Node)>),
+    Sub(Box<(Node, Node)>),
+    Mul(Box<(Node, Node)>),
+    Div(Box<(Node, Node)>),
 }
 
-use std::collections::HashMap;
 impl Node {
-    fn create_op(op: ExprToken, lhs: Node, rhs: Node) -> Self {
-        match op {
-            ExprToken::Add => Node::Add(Box::new((lhs, rhs))),
-            ExprToken::Sub => Node::Sub(Box::new((lhs, rhs))),
-            ExprToken::Mul => Node::Mul(Box::new((lhs, rhs))),
-            ExprToken::Div => Node::Div(Box::new((lhs, rhs))),
-            _ => panic!("{:?} not allowed", op),
-        }
-    }
-
-    fn calc(&self, vars: &HashMap<String, u32>) -> u32 {
+    fn calc(&self, vars: &HashMap<String, i32>) -> i32 {
         use Node::*;
-
         match *self {
             Num(n) => n,
             // with box_pattern:
@@ -180,43 +139,50 @@ impl Node {
     }
 }
 
+fn create_op(op: ExprToken, lhs: Node, rhs: Node) -> Node {
+    match op {
+        ExprToken::Add => Node::Add(Box::new((lhs, rhs))),
+        ExprToken::Sub => Node::Sub(Box::new((lhs, rhs))),
+        ExprToken::Mul => Node::Mul(Box::new((lhs, rhs))),
+        ExprToken::Div => Node::Div(Box::new((lhs, rhs))),
+        _ => panic!("{:?} not allowed", op),
+    }
+}
+
 fn parse_expr(s: &str) -> Result<Node, ParseErr<ExprToken>> {
     let tokens: &mut VecStream<ExprToken> = &mut VecStream::new(tokenize(s).unwrap());
 
-    fn list_to_tree((mut node, rest): (Node, Option<Vec<(ExprToken, Node)>>)) -> Node {
-        for (op, rh) in rest .unwrap_or(vec![]) .into_iter() {
-            node = Node::create_op(op, node, rh);
+    fn list_to_tree((mut node, rest): (Node, Vec<(ExprToken, Node)>)) -> Node {
+        for (op, rh) in rest {
+            node = create_op(op, node, rh);
         }
         node
     }
 
     fn expression(s: &mut VecStream<ExprToken>) -> Result<Node, ParseErr<ExprToken>>
     {
-        let num = predicate(|t: &ExprToken| t.is_num())
-                    .then(|t: ExprToken| Node::Num(t.num()) );
+        let num = predicate(ExprToken::is_num)
+                    .then(|t: ExprToken| t.num())
+                    .then(Node::Num);
 
-        let iden = predicate(|t: &ExprToken| t.is_iden())
-                    .then(|t: ExprToken| Node::Iden(t.iden()) );
+        let iden = predicate(ExprToken::is_iden)
+                    .then(|t: ExprToken| Node::Iden(t.iden()));
 
-        let parens_exp =
+        let parens_exp = wrap(
             (Token(ExprToken::LParen),
             fn_parser(expression),
             Token(ExprToken::RParen))
-            .then(|(_, e, _)| e);
+            .then(|(_, e, _)| e));
 
-        let factor = num.or(wrap(iden)).or(wrap(parens_exp));
-        let op_symb = predicate(|t: &ExprToken| t.is_mul_op());
+        let factor = wrap(num.or(iden).or(parens_exp));
+        let op_symb = predicate(ExprToken::is_mul_op);
 
-        let inf_mul = fn_parser(move |s| {
-            (&factor, maybe(many((&op_symb, &factor))))
-                .then(list_to_tree)
-                .parse(s)
-        });
+        let inf_mul = wrap((factor.clone(), many0((op_symb, factor)))
+                .then(list_to_tree));
 
-        let add_symb = predicate(|t: &ExprToken| t.is_add_op());
-        let expr_parser  = (&inf_mul, wrap((add_symb, &inf_mul))
-                                               .many().maybe())
-                    .then(list_to_tree);
+        let add_symb = predicate(ExprToken::is_add_op);
+        let expr_parser = (inf_mul.clone(), many0((add_symb, inf_mul)))
+                                .then(list_to_tree);
         expr_parser.parse(s)
     }
 
@@ -259,7 +225,7 @@ fn expr_test() {
     variables.insert("one".to_owned(), 1);
     variables.insert("eight".to_owned(), 8);
 
-    let ast = parse_expr("5+ eight /4+3*(9+4-2*3)-((2+3))-8+(2+3)").unwrap();
+    let ast = parse_expr("5+ eight /4+3*(9+4-2*3)-((2+zero+3))-8+(2+3)+ zero").unwrap();
     assert_eq!(ast.calc(&variables), 20);
 
     assert_eq!(parse_expr("(3").ok(), None);

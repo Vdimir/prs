@@ -27,7 +27,7 @@ impl<I, E> Parse for Nop<I, E>
     }
 }
 pub fn nop<I, E>() -> Nop<I, E> {
-    Nop(PhantomData,PhantomData)
+    Nop(PhantomData, PhantomData)
 }
 
 pub struct Eof<I>(PhantomData<I>);
@@ -215,7 +215,6 @@ impl_tup!(a,b);
 impl_tup!(a,b,c);
 impl_tup!(a,b,c,d);
 
-
 pub struct Seq<'a, I, R, O, E> {
     parsers: Vec<Box<ParseTrait<'a, I, O, E>>>,
     _phantom: PhantomData<R>
@@ -255,7 +254,6 @@ where I: SavableStream,
     }
 }
 
-
 pub struct Wrap<'a, I, O, E>(Rc<Parse<Input=I, Output=O, Error=E> + 'a>);
 
 impl<'a, I, O, E> Clone for Wrap<'a, I, O, E>{
@@ -271,18 +269,26 @@ impl<'a, I, O, E> Parse for Wrap<'a, I, O, E>
     type Error = E;
 
     fn parse(&self, tokens: &mut I) -> Result<O, E> {
-        self.0.parse(tokens)
+        (self.0).parse(tokens)
     }
 }
 
 pub fn wrap<'a, P>(p: P) -> Wrap<'a, P::Input, P::Output, P::Error>
-where P: Parse+'a
-{
+where P: Parse+'a {
     Wrap(Rc::new(p))
 }
 
 pub trait ParserComb: Parse
 where Self: Sized, {
+    // TODO check
+    fn and<'a, R, P>(self, parser: P) -> Seq<'a, Self::Input, R, Self::Output, Self::Error>
+    where P: Parse<Input=Self::Input, Output=Self::Output, Error=Self::Error> + 'a,
+          R: FromIterator<Self::Output>,
+          Self: 'a,
+    {
+       Seq::new().and(self).and(parser)
+    }
+
     fn or<P: Parse>(self, parser: P) -> Or<Self, P> {
         Or(self, parser)
     }
