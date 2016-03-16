@@ -47,7 +47,6 @@ fn json_parse(input: &str) -> Result<JsonValue, String>  {
     fn num<'a>() -> Wrap<'a, CharStream<'a>, f64, ParseErr<char>> {
         let sign = wrap(maybe(Token('+').or(Token('-')))
                         .then(|c| c.unwrap_or('+')));
-
         let zero = Token('0').then(|_| "0".to_owned());
         let integer = zero
                       .or(digs())
@@ -66,29 +65,24 @@ fn json_parse(input: &str) -> Result<JsonValue, String>  {
     }
 
     fn q_str<'a>() ->  Wrap<'a, CharStream<'a>, String, ParseErr<char>> {
-        let iden = predicate(|c| *c != '"');
-        let quoted_str = (Token('"'),
-                    many0::<_,String>(iden),
-                    Token('"'))
+        let iden = many0::<_,String>(predicate(|c| *c != '"'));
+        let quoted_str = (Token('"'), iden, Token('"'))
                 .then(|(_, s, _)| s);
         wrap(quoted_str.skip_any(ws()))
     }
 
+
+    fn create_kwd<'a, 'b: 'a, R>(kwd: &'a str) -> Wrap<'a, CharStream<'b>, R, ParseErr<char>>
+    where R: FromIterator<char> + 'a
+    {
+        wrap(Seq::from(kwd.chars().map(Token)))
+    }
+
     fn keyword<'a, 'b: 'a>() -> Wrap<'a, CharStream<'b>, JsonValue, ParseErr<char>> {
-        let tru = (Token('t')).and(Token('r')).and(Token('u')).and(Token('e'))
-                        .then(|_: SupressedRes| JsonValue::True);
-        let fals = (Token('f'))
-                        .and(Token('a'))
-                        .and(Token('l'))
-                        .and(Token('s'))
-                        .and(Token('e'))
-                        .then(|_: SupressedRes| JsonValue::False);
-        let nul = (Token('n'))
-                        .and(Token('u'))
-                        .and(Token('l'))
-                        .and(Token('l'))
-                        .then(|_: SupressedRes| JsonValue::Null);
-        return wrap(tru.or(fals).or(nul));
+        let tru = create_kwd("true").then(|_: SupressedRes| JsonValue::True);
+        let fals = create_kwd("false").then(|_: SupressedRes| JsonValue::False);
+        let nul = create_kwd("null").then(|_: SupressedRes| JsonValue::Null);
+        return wrap(tru.or(fals).or(nul).skip_any(ws()));
     }
 
     fn value_f(tokens: &mut CharStream) -> Result<JsonValue, ParseErr<char>>
@@ -115,19 +109,20 @@ fn json_parse(input: &str) -> Result<JsonValue, String>  {
         .parse(tokens)
     }
 
-    fn object_f(tokens: &mut CharStream) -> Result<JsonValue, ParseErr<char>> {
+    fn kv_pair<'a>() -> Wrap<'a, CharStream<'a>, (String, JsonValue), ParseErr<char>> {
         let value = fn_parser(value_f);
-        let kv_pair = wrap((q_str()
-                            .skip(Token(':').skip_any(ws())),
-                            value));
+        let delim = Token(':').skip_any(ws());
+        wrap((q_str().skip(delim), value))
+    }
+
+    fn object_f(tokens: &mut CharStream) -> Result<JsonValue, ParseErr<char>> {
         let delim = Token(',').skip_any(ws());
         // ( k:v,)* k:v
-        let list = wrap((many0(kv_pair.clone().skip(delim)),
-            kv_pair.clone())
-            .then(|(mut v, r):(Vec<_>,_)| { v.push(r); v }));
+        let list = (many0(kv_pair().skip(delim)), kv_pair())
+                     .then(|(mut v, r):(Vec<_>,_)| { v.push(r); v });
 
         (Token('{').skip_any(ws()),
-        maybe(list)
+        maybe(wrap(list))
             .then(|r| r.unwrap_or(Vec::new()))
             .then(HashMap::from_iter)
             .then(JsonValue::Object),

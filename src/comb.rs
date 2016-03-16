@@ -228,6 +228,17 @@ impl<'a, I, R, O, E> Seq<'a, I, R, O, E> {
         }
     }
 
+    pub fn from<C, P>(parsers: C) -> Self
+    where C: IntoIterator<Item=P>,
+          P: Parse<Input=I, Output=O, Error=E> + 'a,
+    {
+        let parser_iter = parsers.into_iter().map(|p| Box::new(p) as Box<ParseTrait<'a, I, O, E>>);
+        Seq {
+            parsers: Vec::from_iter(parser_iter),
+            _phantom: PhantomData,
+        }
+    }
+
     pub fn and<P>(mut self, parser: P) -> Self
     where P: Parse<Input=I, Output=O, Error=E> + 'a
     {

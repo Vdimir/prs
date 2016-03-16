@@ -88,7 +88,6 @@ pub mod char_stream {
     }
 }
 
-
 pub mod vec_stream {
     use super::{ TokenStream, SavableStream };
 
@@ -100,6 +99,7 @@ pub mod vec_stream {
     }
     #[derive(Clone,Copy)]
     pub struct VecStreamState(Idx);
+
     impl<T: Clone> SavableStream for VecStream<T> {
         type State = VecStreamState;
         fn save(&self) -> VecStreamState {
@@ -139,12 +139,13 @@ pub mod vec_stream {
     }
 }
 
+// ======================================= Tests ========================================
 #[cfg(test)]
 mod tests {
-
     use super::char_stream::CharStream;
-    use super::TokenStream;
-    use super::RangeStream;
+    use super::vec_stream::VecStream;
+    use super::{TokenStream, RangeStream, SavableStream};
+
     #[test]
     fn char_stream_test() {
         let mut stream = CharStream::new("eng_фцч_123");
@@ -196,8 +197,6 @@ mod tests {
         assert_eq!(stream.next(), None);
     }
 
-    use super::vec_stream::VecStream;
-    use super::SavableStream;
     #[test]
     fn vec_stream_test() {
         let mut stream = VecStream::new(vec!['x','y','z']);
@@ -217,5 +216,5 @@ mod tests {
         assert_eq!(stream.next(), None);
 
     }
-
 }
+
