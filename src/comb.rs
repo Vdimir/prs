@@ -2,10 +2,9 @@
 // // * Module to combinate parsers in different way
 // // *
 use pars::Parse;
-use stream::TokenStream;
+use stream::{TokenStream, SavableStream};
 use std::iter::FromIterator;
 use std::marker::PhantomData;
-use stream::SavableStream;
 use result::ParseErr;
 use result::SupressedRes;
 
@@ -291,7 +290,7 @@ where P: Parse+'a {
 
 pub trait ParserComb: Parse
 where Self: Sized, {
-    // TODO check
+
     fn and<'a, R, P>(self, parser: P) -> Seq<'a, Self::Input, R, Self::Output, Self::Error>
     where P: Parse<Input=Self::Input, Output=Self::Output, Error=Self::Error> + 'a,
           R: FromIterator<Self::Output>,

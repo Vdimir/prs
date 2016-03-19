@@ -6,6 +6,7 @@ use prs::stream::char_stream::CharStream;
 use prs::stream::TokenStream;
 use prs::pars::Parse;
 use prs::pars::predicate;
+use prs::pars::parse_while;
 use prs::pars::fn_parser;
 use prs::comb::ParserComb;
 
@@ -33,6 +34,37 @@ fn pred_test() {
     assert_eq!(dig.parse(&mut input), Ok(2));
     assert_eq!(dig.parse(&mut input), Err(UnexpectedAt('a', 2)));
     assert_eq!(input.peek(), Some('a'));
+}
+
+#[test]
+fn parse_while_test() {
+    let mut input = CharStream::new("12a1");
+
+    let dig = parse_while(|c: &char| c.is_digit(10));
+
+    assert_eq!(dig.parse(&mut input), Ok("12"));
+    assert_eq!(dig.parse(&mut input), Err(UnexpectedAt('a', 2)));
+}
+
+#[test]
+fn parse_while_zero_allocate_test() {
+    let s = "12a1";
+    let raw_src_ptr = s.as_ptr();
+
+    let mut input = CharStream::new(s);
+
+    let dig = parse_while(|c: &char| c.is_digit(10));
+    let letter = Token('a');
+
+    let res = dig.parse(&mut input).unwrap();
+    assert_eq!(res.as_ptr(), raw_src_ptr);
+
+    letter.parse(&mut input);
+
+    let res = dig.parse(&mut input).unwrap();
+    unsafe {
+        assert_eq!(res.as_ptr(), raw_src_ptr.offset(3));
+    }
 }
 
 #[test]

@@ -3,7 +3,8 @@
 // *
 
 use std::marker::PhantomData;
-use stream::TokenStream;
+use stream::{TokenStream, RangeStream};
+use result::ParseErr;
 
 // ========================================= Parse Trait ==========================================
 
@@ -30,7 +31,6 @@ impl<'a, I, O, P, E> Parse for &'a P
 // ==================================== Parse Implementations =====================================
 
 // -------------------------------------------- Token ---------------------------------------------
-use result::ParseErr;
 
 pub struct Token<S: TokenStream>(pub S::Token);
 
@@ -89,6 +89,44 @@ where T: TokenStream,
       F: Fn(&T::Token) -> bool,
 {
     Predicate {
+        predicate: f,
+        _phantom: PhantomData
+    }
+}
+
+
+// ------------------------------------------ While -------------------------------------------
+pub struct While<F, S>
+where S: RangeStream,
+      F: Fn(&S::Token) -> bool
+{
+    predicate: F,
+    _phantom: PhantomData<S>
+}
+
+impl<S, F> Parse for While<F, S>
+    where S: RangeStream,
+        F: Fn(&S::Token) -> bool
+{
+    type Input = S;
+    type Output = S::Range;
+    type Error = ParseErr<S::Token>;
+
+    fn parse(&self, tokens: &mut S) -> Result<Self::Output, Self::Error> {
+        let lexem_beg = tokens.save();
+        while tokens.peek().map_or(false, |t| (self.predicate)(&t) ) {
+            tokens.next();
+        }
+        tokens.range(lexem_beg)
+            .ok_or( ParseErr::unexpected(tokens.peek()).at(tokens.position()))
+    }
+}
+
+pub fn parse_while<F, T>(f: F) -> While<F, T>
+where T: RangeStream,
+      F: Fn(&T::Token) -> bool,
+{
+    While {
         predicate: f,
         _phantom: PhantomData
     }
