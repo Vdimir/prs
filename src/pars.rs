@@ -4,9 +4,8 @@
 
 use std::marker::PhantomData;
 use stream::{TokenStream, RangeStream};
-use result::ParseErr;
+use result::{ParseErr, SupressedRes};
 
-// ========================================= Parse Trait ==========================================
 
 pub trait Parse {
     type Input;
@@ -27,8 +26,6 @@ impl<'a, I, O, P, E> Parse for &'a P
         (**self).parse(tokens)
     }
 }
-
-// ==================================== Parse Implementations =====================================
 
 // -------------------------------------------- Token ---------------------------------------------
 
@@ -152,3 +149,43 @@ pub fn fn_parser<S, R, E, F>(f: F) -> FnParser<F, S>
 {
     FnParser(f, PhantomData)
 }
+
+// ------------------------------------------- Nop -------------------------------------------
+pub struct Nop<I, E>(PhantomData<I>, PhantomData<E>);
+
+impl<I, E> Parse for Nop<I, E>
+    where I: TokenStream,
+{
+    type Input = I;
+    type Output = SupressedRes;
+    type Error = E;
+
+    fn parse(&self, _: &mut Self::Input) -> Result<Self::Output, Self::Error> {
+        Ok(SupressedRes)
+    }
+}
+
+pub fn nop<I, E>() -> Nop<I, E> {
+    Nop(PhantomData, PhantomData)
+}
+
+// ------------------------------------------- Eof -------------------------------------------
+pub struct Eof<I>(PhantomData<I>);
+impl<I> Parse for Eof<I>
+    where I: TokenStream,
+{
+    type Input = I;
+    type Output = SupressedRes;
+    type Error = ParseErr<I::Token>;
+
+    fn parse(&self, tokens: &mut Self::Input) -> Result<Self::Output, Self::Error> {
+        match tokens.peek() {
+            Some(t) => Err(ParseErr::unexpected(Some(t))),
+            None => Ok(SupressedRes),
+        }
+    }
+}
+pub fn eof<I>() -> Eof<I> {
+    Eof(PhantomData)
+}
+

@@ -5,7 +5,7 @@ use prs::pars::{Parse, Token, predicate};
 use prs::comb::ParserComb;
 use prs::comb::wrap;
 use prs::comb::many0;
-use prs::comb::eof;
+use prs::pars::eof;
 use prs::comb::many;
 use prs::result::SupressedRes;
 use prs::stream::char_stream::CharStream;

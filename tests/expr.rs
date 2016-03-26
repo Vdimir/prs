@@ -1,11 +1,11 @@
 
 extern crate prs;
 
-use prs::pars::{Token, Parse, predicate, fn_parser};
+use prs::pars::{Token, Parse, predicate, fn_parser, eof};
 use prs::stream::char_stream::CharStream;
 use prs::stream::vec_stream::VecStream;
 use prs::comb::ParserComb;
-use prs::comb::{eof, many, maybe, wrap, many0, Seq};
+use prs::comb::{many, maybe, wrap, many0, Seq};
 use prs::result::ParseErr;
 
 use std::collections::HashMap;
