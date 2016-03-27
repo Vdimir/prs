@@ -12,10 +12,7 @@ use prs::stream::char_stream::CharStream;
 
 
 fn csv_parse(input: &str) -> Result<Vec<Vec<String>>, String> {
-    let tokens = &mut CharStream::new(input);
-
-
-    let sep = wrap(Token(','));
+    let sep = wrap(Token::<CharStream>(','));
     let quote = wrap(Token('"'));
     let dquote = Token('"').and(Token('"')).then(|_: SupressedRes| '"');
     let nl = wrap(Token('\n'));
@@ -40,7 +37,7 @@ fn csv_parse(input: &str) -> Result<Vec<Vec<String>>, String> {
         .then(|(mut v, r):(Vec<_>,_)| { v.push(r); println!("{:?}",v); v }));
 
 
-    many(line.skip(nl)).skip(eof()).parse(tokens).map_err(|e| format!("{}", e))
+    many(line.skip(nl)).skip(eof()).parse_from(input).map_err(|e| format!("{}", e))
 
 }
 

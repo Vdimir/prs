@@ -86,6 +86,11 @@ pub mod char_stream {
             }
         }
     }
+    impl<'a> From<&'a str> for CharStream<'a> {
+        fn from(s: &'a str) -> Self {
+            CharStream::new(s)
+        }
+    }
 }
 
 pub mod vec_stream {

@@ -13,6 +13,12 @@ pub trait Parse {
     type Error;
 
     fn parse(&self, &mut Self::Input) -> Result<Self::Output, Self::Error>;
+
+    fn parse_from<T>(&self, input: T) -> Result<Self::Output, Self::Error>
+    where Self::Input: From<T>, Self: Sized
+    {
+        self.parse(&mut Self::Input::from(input))
+    }
 }
 
 impl<'a, I, O, P, E> Parse for &'a P
