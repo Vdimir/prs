@@ -1,4 +1,10 @@
 
+#![feature(test)]
+
+extern crate test;
+
+use test::Bencher;
+
 extern crate prs;
 use prs::pars::{Token, predicate, fn_parser, Parse };
 use prs::comb::{ParserComb, many, many0, maybe, Seq, wrap, Wrap };
@@ -85,23 +91,22 @@ fn json_parse(input: &str) -> Result<JsonValue, String>  {
         return wrap(tru.or(fals).or(nul).skip_any(ws()));
     }
 
-    fn value_f(tokens: &mut CharStream) -> Result<JsonValue, ParseErr<char>>
-    {
+    fn value<'a, 'b: 'a>() -> Wrap<'a, CharStream<'b>, JsonValue, ParseErr<char>> {
+        wrap(
         q_str().then(JsonValue::Str)
         .or(num().then(JsonValue::Num))
         .or(fn_parser(object_f))
         .or(fn_parser(array_f))
         .or(keyword())
-        .skip_any(ws())
-        .parse(tokens)
+        .skip_any(ws()))
     }
 
     fn array_f(tokens: &mut CharStream) -> Result<JsonValue, ParseErr<char>>
     {
         let delim = Token(',').skip_any(ws());
-        let list = wrap((many0(fn_parser(value_f).skip(delim)),
-            fn_parser(value_f))
-            .then(|(mut v, r):(Vec<_>,_)| { v.push(r); v }));
+        let list = (many0(value().skip(delim)),
+            value())
+            .then(|(mut v, r):(Vec<_>,_)| { v.push(r); v });
         (Token('[').skip_any(ws()),
         maybe(list).then(|r| r.unwrap_or(Vec::new())),
         Token(']').skip_any(ws()))
@@ -110,9 +115,8 @@ fn json_parse(input: &str) -> Result<JsonValue, String>  {
     }
 
     fn kv_pair<'a>() -> Wrap<'a, CharStream<'a>, (String, JsonValue), ParseErr<char>> {
-        let value = fn_parser(value_f);
         let delim = Token(':').skip_any(ws());
-        wrap((q_str().skip(delim), value))
+        wrap((q_str().skip(delim), value()))
     }
 
     fn object_f(tokens: &mut CharStream) -> Result<JsonValue, ParseErr<char>> {
@@ -131,12 +135,12 @@ fn json_parse(input: &str) -> Result<JsonValue, String>  {
             .parse(tokens)
     }
 
-    let res = fn_parser(object_f).parse(stream);
+    let res = value().parse(stream);
     return res.map_err(|e| format!("{}", e))
 }
 
-#[test]
-fn json_test() {
+#[bench]
+fn json_test(b: &mut Bencher) {
     use JsonValue::*;
     let mut sub_obj: HashMap<String, JsonValue> = HashMap::new();
     sub_obj.insert("first".to_owned(), Num(1023_f64));
@@ -156,19 +160,21 @@ fn json_test() {
                                         True,
                                     ]));
     res.insert("nil".to_owned(), Null);
-
-    let parsed = json_parse(r#"{
-        "ob1": {
-                "first" : 1023,
-                "second" : "two"
-                },
-        "second" : "001",
-        "float": 3.14159,
-        "neg": -0.5,
-        "empty_obj" : { },
-        "arr": [ 1, 2.0, "three", -4, { }, true],
-        "nil" : null
-    }"#);
+    let mut parsed = Err("None".to_owned());
+    b.iter(|| {
+        parsed = json_parse(r#"{
+            "ob1": {
+                    "first" : 1023,
+                    "second" : "two"
+                    },
+            "second" : "001",
+            "float": 3.14159,
+            "neg": -0.5,
+            "empty_obj" : { },
+            "arr": [ 1, 2.0, "three", -4, { }, true],
+            "nil" : null
+        }"#);
+    });
     assert_eq!(parsed.unwrap(), JsonValue::Object(res));
 }
 
@@ -176,14 +182,17 @@ use std::io::Read;
 use std::fs::File;
 use std::path::Path;
 
-#[test]
-fn json_file_test() {
+#[bench]
+fn json_file_test(b: &mut Bencher) {
     let mut data = String::new();
     File::open(&Path::new("data.json"))
         .and_then(|mut file| file.read_to_string(&mut data))
         .unwrap();
-    let parsed = json_parse(&data);
 
+    let mut parsed = Err("None".to_owned());
+    b.iter(|| {
+        parsed = json_parse(&data);
+    });
     assert!(parsed.is_ok());
 }
 
