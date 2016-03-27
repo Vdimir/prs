@@ -7,11 +7,11 @@ use test::Bencher;
 
 extern crate prs;
 use prs::pars::{Token, predicate, fn_parser, Parse };
-use prs::comb::{ParserComb, many, many0, maybe, Seq, wrap, Wrap };
+use prs::comb::{ParserComb, many, many0, maybe, Seq, wrap, ParserWraper };
 
 use prs::stream::char_stream::CharStream;
 use prs::stream::{ RangeStream, TokenStream };
-use prs::result::{ ParseErr, SupressedRes };
+use prs::result::{ ParseErr, DummyResult };
 
 use std::iter::FromIterator;
 use std::collections::HashMap;
@@ -46,11 +46,11 @@ fn json_parse(input: &str) -> Result<JsonValue, String>  {
         n
     }
 
-    fn digs<'a>() -> Wrap<'a, CharStream<'a>, String, ParseErr<char>> {
+    fn digs<'a>() -> ParserWraper<'a, CharStream<'a>, String, ParseErr<char>> {
         wrap(many::<_,String>(predicate(|c| char::is_digit(*c, 10) )))
     }
 
-    fn num<'a>() -> Wrap<'a, CharStream<'a>, f64, ParseErr<char>> {
+    fn num<'a>() -> ParserWraper<'a, CharStream<'a>, f64, ParseErr<char>> {
         let sign = wrap(maybe(Token('+').or(Token('-')))
                         .then(|c| c.unwrap_or('+')));
         let zero = Token('0').then(|_| "0".to_owned());
@@ -66,11 +66,11 @@ fn json_parse(input: &str) -> Result<JsonValue, String>  {
         return wrap(number);
     }
 
-    fn ws<'a>() -> Wrap<'a, CharStream<'a>, (), ParseErr<char>> {
+    fn ws<'a>() -> ParserWraper<'a, CharStream<'a>, (), ParseErr<char>> {
         wrap(predicate(|c| char::is_whitespace(*c)).then(|_| ()))
     }
 
-    fn q_str<'a>() ->  Wrap<'a, CharStream<'a>, String, ParseErr<char>> {
+    fn q_str<'a>() ->  ParserWraper<'a, CharStream<'a>, String, ParseErr<char>> {
         let iden = many0::<_,String>(predicate(|c| *c != '"'));
         let quoted_str = (Token('"'), iden, Token('"'))
                 .then(|(_, s, _)| s);
@@ -78,20 +78,20 @@ fn json_parse(input: &str) -> Result<JsonValue, String>  {
     }
 
 
-    fn create_kwd<'a, 'b: 'a, R>(kwd: &'a str) -> Wrap<'a, CharStream<'b>, R, ParseErr<char>>
+    fn create_kwd<'a, 'b: 'a, R>(kwd: &'a str) -> ParserWraper<'a, CharStream<'b>, R, ParseErr<char>>
     where R: FromIterator<char> + 'a
     {
         wrap(Seq::from(kwd.chars().map(Token)))
     }
 
-    fn keyword<'a, 'b: 'a>() -> Wrap<'a, CharStream<'b>, JsonValue, ParseErr<char>> {
-        let tru = create_kwd("true").then(|_: SupressedRes| JsonValue::True);
-        let fals = create_kwd("false").then(|_: SupressedRes| JsonValue::False);
-        let nul = create_kwd("null").then(|_: SupressedRes| JsonValue::Null);
+    fn keyword<'a, 'b: 'a>() -> ParserWraper<'a, CharStream<'b>, JsonValue, ParseErr<char>> {
+        let tru = create_kwd("true").then(|_: DummyResult| JsonValue::True);
+        let fals = create_kwd("false").then(|_: DummyResult| JsonValue::False);
+        let nul = create_kwd("null").then(|_: DummyResult| JsonValue::Null);
         return wrap(tru.or(fals).or(nul).skip_any(ws()));
     }
 
-    fn value<'a, 'b: 'a>() -> Wrap<'a, CharStream<'b>, JsonValue, ParseErr<char>> {
+    fn value<'a, 'b: 'a>() -> ParserWraper<'a, CharStream<'b>, JsonValue, ParseErr<char>> {
         wrap(
         q_str().then(JsonValue::Str)
         .or(num().then(JsonValue::Num))
@@ -114,7 +114,7 @@ fn json_parse(input: &str) -> Result<JsonValue, String>  {
         .parse(tokens)
     }
 
-    fn kv_pair<'a>() -> Wrap<'a, CharStream<'a>, (String, JsonValue), ParseErr<char>> {
+    fn kv_pair<'a>() -> ParserWraper<'a, CharStream<'a>, (String, JsonValue), ParseErr<char>> {
         let delim = Token(':').skip_any(ws());
         wrap((q_str().skip(delim), value()))
     }

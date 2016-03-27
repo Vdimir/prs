@@ -4,8 +4,7 @@
 
 use std::marker::PhantomData;
 use stream::{TokenStream, RangeStream};
-use result::{ParseErr, SupressedRes};
-
+use result::{ParseErr, DummyResult};
 
 pub trait Parse {
     type Input;
@@ -23,7 +22,6 @@ pub trait Parse {
 
 impl<'a, I, O, P, E> Parse for &'a P
     where P: Parse<Input=I, Output = O, Error=E>,
-          // I: TokenStream,
 {
     type Input = I;
     type Output = O;
@@ -121,7 +119,7 @@ impl<S, F> Parse for While<F, S>
             tokens.next();
         }
         tokens.range(lexem_beg)
-            .ok_or( ParseErr::unexpected(tokens.peek()).at(tokens.position()))
+            .ok_or(ParseErr::unexpected(tokens.peek()).at(tokens.position()))
     }
 }
 
@@ -163,11 +161,11 @@ impl<I, E> Parse for Nop<I, E>
     where I: TokenStream,
 {
     type Input = I;
-    type Output = SupressedRes;
+    type Output = DummyResult;
     type Error = E;
 
     fn parse(&self, _: &mut Self::Input) -> Result<Self::Output, Self::Error> {
-        Ok(SupressedRes)
+        Ok(DummyResult)
     }
 }
 
@@ -181,16 +179,17 @@ impl<I> Parse for Eof<I>
     where I: TokenStream,
 {
     type Input = I;
-    type Output = SupressedRes;
+    type Output = DummyResult;
     type Error = ParseErr<I::Token>;
 
     fn parse(&self, tokens: &mut Self::Input) -> Result<Self::Output, Self::Error> {
         match tokens.peek() {
             Some(t) => Err(ParseErr::unexpected(Some(t))),
-            None => Ok(SupressedRes),
+            None => Ok(DummyResult),
         }
     }
 }
+
 pub fn eof<I>() -> Eof<I> {
     Eof(PhantomData)
 }

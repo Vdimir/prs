@@ -5,6 +5,7 @@ pub enum ParseErr<T> {
     Unexpected(T),
     UnexpectedAt(T, usize),
     UnexpectedEof,
+    Multiple(Vec<Box<ParseErr<T>>>)
 }
 
 impl<T> ParseErr<T> {
@@ -22,6 +23,13 @@ impl<T> ParseErr<T> {
             e => e
         }
     }
+
+    pub fn add_error(mut self, e: ParseErr<T>) -> Self {
+        match self {
+            ParseErr::Multiple(mut v) => { v.push(Box::new(e)); ParseErr::Multiple(v) },
+            a => ParseErr::Multiple(vec![Box::new(a), Box::new(e)])
+        }
+    }
 }
 
 use std::fmt;
@@ -33,18 +41,23 @@ impl<T: fmt::Display> fmt::Display for ParseErr<T>{
             &Unexpected(ref t) => write!(f, "Unexpected token: `{}`", *t),
             &UnexpectedAt(ref t, p) => write!(f, "Unexpected token: `{}` at {}", *t, p),
             &UnexpectedEof => write!(f, "Unexpected EOF"),
+            &Multiple(ref v) => write!(f, "{:?}", v.iter()
+                                                    .map(|e| e.to_string())
+                                                    .collect::<Vec<String>>()
+                                                    .join("; ")),
+
         }
     }
 }
 
 use std::iter::FromIterator;
-pub struct SupressedRes;
+pub struct DummyResult;
 
-impl<A> FromIterator<A> for SupressedRes {
+impl<A> FromIterator<A> for DummyResult {
     fn from_iter<T>(it: T) -> Self
     where T: IntoIterator<Item=A>
     {
         for _ in it {}
-        SupressedRes
+        DummyResult
     }
 }

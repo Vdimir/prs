@@ -11,7 +11,7 @@ use prs::comb::Seq;
 use prs::stream::char_stream::CharStream;
 use prs::stream::TokenStream;
 
-use prs::result::ParseErr::UnexpectedAt;
+use prs::result::ParseErr::{ UnexpectedAt, Multiple};
 
 #[test]
 fn or_test() {
@@ -20,7 +20,8 @@ fn or_test() {
 
     assert_eq!(x_or_y.parse(&mut input), Ok('x'));
     assert_eq!(x_or_y.parse(&mut input), Ok('y'));
-    assert_eq!(x_or_y.parse(&mut input), Err(UnexpectedAt('z', 2)));
+    assert_eq!(x_or_y.parse(&mut input), Err(Multiple(vec![Box::new(UnexpectedAt('z', 2)),
+                                                            Box::new(UnexpectedAt('z', 2))])));
 
     let xyz = x_or_y.or(Token('z'));
     assert_eq!(xyz.parse(&mut input), Ok('z'));

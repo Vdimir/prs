@@ -7,14 +7,14 @@ use prs::comb::wrap;
 use prs::comb::many0;
 use prs::pars::eof;
 use prs::comb::many;
-use prs::result::SupressedRes;
+use prs::result::DummyResult;
 use prs::stream::char_stream::CharStream;
 
 
 fn csv_parse(input: &str) -> Result<Vec<Vec<String>>, String> {
     let sep = wrap(Token::<CharStream>(','));
     let quote = wrap(Token('"'));
-    let dquote = Token('"').and(Token('"')).then(|_: SupressedRes| '"');
+    let dquote = Token('"').and(Token('"')).then(|_: DummyResult| '"');
     let nl = wrap(Token('\n'));
     let non_spec_char = wrap(predicate(|c: &char| *c != '"' && *c != ',' && *c != '\n')
         .then(|c| {println!("{:?}", c); c }));

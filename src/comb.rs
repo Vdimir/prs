@@ -54,20 +54,19 @@ impl<R, T, P1, P2> Parse for Or<P1, P2>
             Err(e0) => {
                 match self.1.parse(tokens) {
                     Ok(v) => Ok(v),
-                    // TODO combine e0 and e1
-                    Err(e1) => Err(e0),
+                    Err(e1) => Err(e0.add_error(e1)),
                 }
             },
         }
     }
 }
 
-struct ManyIter<'a, P: 'a, I: 'a> {
+struct ManyIter<'a, 'b, P: 'a, I: 'b> {
     parser: &'a P,
-    input: &'a mut I
+    input: &'b mut I
 }
 
-impl<'a, P, I: 'a> ManyIter<'a, P, I>
+impl<'a, 'b, P:'b, I: 'a> ManyIter<'a, 'b, P, I>
     where P: Parse<Input=I>,
           I: TokenStream
 {
@@ -76,7 +75,7 @@ impl<'a, P, I: 'a> ManyIter<'a, P, I>
     }
 }
 
-impl<'a, P, I> Iterator for ManyIter<'a, P, I>
+impl<'a, 'b, P, I> Iterator for ManyIter<'a, 'b, P, I>
 where P: Parse<Input=I>,
       I: TokenStream {
     type Item = P::Output;
@@ -104,6 +103,7 @@ impl<P, R> Parse for Many<P, R>
 }
 
 pub struct Many0<P, R>(P, PhantomData<R>);
+
 impl<P, R> Parse for Many0<P, R>
 where P::Input: SavableStream,
     P: Parse,
@@ -209,17 +209,17 @@ impl<'a, I, R, O, E> Seq<'a, I, R, O, E> {
     }
 }
 
-impl<'a, I, R, O, E> Parse for Seq<'a, I, R, O, E>
+impl<'a, I, C, R, E> Parse for Seq<'a, I, C, R, E>
 where I: SavableStream,
-      R: FromIterator<O>
+      C: FromIterator<R>
 {
     type Input = I;
-    type Output = R;
+    type Output = C;
     type Error = E;
 
-    fn parse(&self, tokens: &mut I) -> Result<R, E> {
+    fn parse(&self, tokens: &mut I) -> Result<C, E> {
         let save = tokens.save();
-        let res: Result<R, E> = self.parsers.iter().map(|p| p.parse(tokens)).collect();
+        let res: Result<C, E> = self.parsers.iter().map(|p| p.parse(tokens)).collect();
         if res.is_err() {
             tokens.restore(save);
         }
@@ -227,28 +227,28 @@ where I: SavableStream,
     }
 }
 
-pub struct Wrap<'a, I, O, E>(Rc<Parse<Input=I, Output=O, Error=E> + 'a>);
+pub struct ParserWraper<'a, I, R, E>(Rc<Parse<Input=I, Output=R, Error=E> + 'a>);
 
-impl<'a, I, O, E> Clone for Wrap<'a, I, O, E>{
+impl<'a, I, R, E> Clone for ParserWraper<'a, I, R, E>{
     fn clone(&self) -> Self {
-        Wrap(self.0.clone())
+        ParserWraper(self.0.clone())
     }
 }
 
-impl<'a, I, O, E> Parse for Wrap<'a, I, O, E>
+impl<'a, I, R, E> Parse for ParserWraper<'a, I, R, E>
 {
     type Input = I;
-    type Output = O;
+    type Output = R;
     type Error = E;
 
-    fn parse(&self, tokens: &mut I) -> Result<O, E> {
+    fn parse(&self, tokens: &mut I) -> Result<R, E> {
         (self.0).parse(tokens)
     }
 }
 
-pub fn wrap<'a, P>(p: P) -> Wrap<'a, P::Input, P::Output, P::Error>
+pub fn wrap<'a, P>(p: P) -> ParserWraper<'a, P::Input, P::Output, P::Error>
 where P: Parse+'a {
-    Wrap(Rc::new(p))
+    ParserWraper(Rc::new(p))
 }
 
 pub trait ParserComb: Parse
