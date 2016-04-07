@@ -48,22 +48,17 @@ fn parse_while_test() {
 
 #[test]
 fn parse_while_zero_allocate_test() {
-    let s = "12a1";
-    let raw_src_ptr = s.as_ptr();
 
-    let mut input = CharStream::new(s);
+    let p = (parse_while(|c: &char| c.is_digit(10)),
+            Token::<CharStream>('.'),
+            parse_while(|c: &char| c.is_digit(10)));
 
-    let dig = parse_while(|c: &char| c.is_digit(10));
-    let letter = Token('a');
+    let s = "10.1";
+    let (ten, _, one) = p.parse_from(s).unwrap();
 
-    let res = dig.parse(&mut input).unwrap();
-    assert_eq!(res.as_ptr(), raw_src_ptr);
-
-    letter.parse(&mut input);
-
-    let res = dig.parse(&mut input).unwrap();
     unsafe {
-        assert_eq!(res.as_ptr(), raw_src_ptr.offset(3));
+        assert_eq!(ten.as_ptr(), s.as_ptr());
+        assert_eq!(one.as_ptr(), s.as_ptr().offset(3));
     }
 }
 
@@ -93,4 +88,3 @@ fn fn_parse_test() {
     assert_eq!(p.parse(input), Ok("".to_owned()));
     assert_eq!(input.peek(), Some('a'));
 }
-

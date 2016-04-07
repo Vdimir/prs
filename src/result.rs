@@ -24,7 +24,7 @@ impl<T> ParseErr<T> {
         }
     }
 
-    pub fn add_error(mut self, e: ParseErr<T>) -> Self {
+    pub fn add_error(self, e: ParseErr<T>) -> Self {
         match self {
             ParseErr::Multiple(mut v) => { v.push(Box::new(e)); ParseErr::Multiple(v) },
             a => ParseErr::Multiple(vec![Box::new(a), Box::new(e)])

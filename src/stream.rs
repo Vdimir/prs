@@ -86,6 +86,7 @@ pub mod char_stream {
             }
         }
     }
+
     impl<'a> From<&'a str> for CharStream<'a> {
         fn from(s: &'a str) -> Self {
             CharStream::new(s)
@@ -102,7 +103,8 @@ pub mod vec_stream {
         source: Vec<T>,
         position: Idx,
     }
-    #[derive(Clone,Copy)]
+
+    #[derive(Clone, Copy)]
     pub struct VecStreamState(Idx);
 
     impl<T: Clone> SavableStream for VecStream<T> {
@@ -140,6 +142,12 @@ pub mod vec_stream {
                 source: s,
                 position: 0,
             }
+        }
+    }
+
+    impl<T: Clone> From<Vec<T>> for VecStream<T> {
+        fn from(v: Vec<T>) -> Self {
+            VecStream::new(v)
         }
     }
 }

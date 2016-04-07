@@ -5,7 +5,7 @@ use prs::pars::{Token, Parse, predicate, fn_parser, eof};
 use prs::stream::char_stream::CharStream;
 use prs::stream::vec_stream::VecStream;
 use prs::comb::ParserComb;
-use prs::comb::{many, maybe, wrap, many0, Seq};
+use prs::comb::{many, wrap, many0};
 use prs::result::ParseErr;
 
 use std::collections::HashMap;
@@ -68,9 +68,8 @@ impl ExprToken {
 
 fn tokenize(input: &str) -> Result<Vec<ExprToken>, ParseErr<char>> {
     use ExprToken::*;
-    let stream = &mut CharStream::new(input);
 
-    let plus    = Token('+').then(|_| Add);
+    let plus    = Token::<CharStream>('+').then(|_| Add);
     let minus   = Token('-').then(|_| Sub);
     let mul     = Token('*').then(|_| Mul);
     let div     = Token('/').then(|_| Div);
@@ -93,7 +92,7 @@ fn tokenize(input: &str) -> Result<Vec<ExprToken>, ParseErr<char>> {
     let lexem = wrap(op_symb.or(num).or(iden).or(paren));
 
     let lexer = many(lexem.skip_any(Token(' '))).skip(eof());
-    return lexer.parse(stream);
+    return lexer.parse_from(input);
 }
 
 #[test]
@@ -150,13 +149,9 @@ fn create_op(op: ExprToken, lhs: Node, rhs: Node) -> Node {
 }
 
 fn parse_expr(s: &str) -> Result<Node, ParseErr<ExprToken>> {
-    let tokens: &mut VecStream<ExprToken> = &mut VecStream::new(tokenize(s).unwrap());
 
-    fn list_to_tree((mut node, rest): (Node, Vec<(ExprToken, Node)>)) -> Node {
-        for (op, rh) in rest {
-            node = create_op(op, node, rh);
-        }
-        node
+    fn list_to_tree((node, rest): (Node, Vec<(ExprToken, Node)>)) -> Node {
+        rest.into_iter().fold(node, |lhs, (op, rhs)| create_op(op, lhs, rhs))
     }
 
     fn expression(s: &mut VecStream<ExprToken>) -> Result<Node, ParseErr<ExprToken>>
@@ -177,7 +172,7 @@ fn parse_expr(s: &str) -> Result<Node, ParseErr<ExprToken>> {
         let factor = wrap(num.or(iden).or(parens_exp));
         let op_symb = predicate(ExprToken::is_mul_op);
 
-        let inf_mul = wrap((factor.clone(), many0((op_symb, factor)))
+        let inf_mul = wrap((factor.clone(), many0::<_,Vec<_>>((op_symb, factor)))
                 .then(list_to_tree));
 
         let add_symb = predicate(ExprToken::is_add_op);
@@ -188,7 +183,7 @@ fn parse_expr(s: &str) -> Result<Node, ParseErr<ExprToken>> {
 
     fn_parser(expression)
     .skip(eof())
-    .parse(tokens)
+    .parse_from(tokenize(s).unwrap())
 }
 
 #[test]
@@ -234,4 +229,3 @@ fn expr_test() {
     assert_eq!(parse_expr("5+*3").ok(), None);
     assert_eq!(parse_expr("-9").ok(), None);
 }
-
