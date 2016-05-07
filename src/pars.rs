@@ -14,9 +14,9 @@ pub trait Parse {
     fn parse(&self, &mut Self::Input) -> Result<Self::Output, Self::Error>;
 
     fn parse_from<T>(&self, input: T) -> Result<Self::Output, Self::Error>
-    where Self::Input: From<T>, Self: Sized
+    where T: Into<Self::Input>, Self: Sized
     {
-        self.parse(&mut Self::Input::from(input))
+        self.parse(&mut input.into())
     }
 }
 
