@@ -37,7 +37,7 @@ pub struct Token<S: TokenStream>(pub S::Token);
 
 impl<S> Parse for Token<S>
     where S: TokenStream,
-          S::Token: PartialEq + Clone
+          S::Token: PartialEq
 {
     type Input = S;
     type Output = S::Token;
@@ -66,7 +66,6 @@ where S: TokenStream,
 
 impl<S, F> Parse for Predicate<F, S>
     where S: TokenStream,
-          S::Token: Clone,
         F: Fn(&S::Token) -> bool
 {
     type Input = S;
@@ -75,9 +74,9 @@ impl<S, F> Parse for Predicate<F, S>
 
     fn parse(&self, tokens: &mut S) -> Result<Self::Output, Self::Error> {
         let next_token = tokens.peek();
-        let satified = next_token.map_or(false, |t| (self.predicate)(&t));
+        let satisfied = next_token.map_or(false, |t| (self.predicate)(&t));
 
-        if satified {
+        if satisfied {
             Ok(tokens.next().unwrap())
         } else {
             Err(ParseErr::unexpected(tokens.peek()).at(tokens.position()))

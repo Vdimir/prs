@@ -10,4 +10,4 @@ commit: test
 	git commit
 
 gadd: test
-	git add */*.rs && git status
+	git add src/*.rs && git status

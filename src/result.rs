@@ -1,4 +1,8 @@
 
+pub trait MultiError {
+    fn add_error(self, e: Self) -> Self;
+}
+
 #[derive(PartialEq, Debug, Clone)]
 pub enum ParseErr<T> {
     Undefined,
@@ -24,7 +28,11 @@ impl<T> ParseErr<T> {
         }
     }
 
-    pub fn add_error(self, e: ParseErr<T>) -> Self {
+
+}
+
+impl<T> MultiError for ParseErr<T> {
+    fn add_error(self, e: ParseErr<T>) -> Self {
         match self {
             ParseErr::Multiple(mut v) => { v.push(Box::new(e)); ParseErr::Multiple(v) },
             a => ParseErr::Multiple(vec![Box::new(a), Box::new(e)])

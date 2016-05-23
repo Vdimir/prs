@@ -5,11 +5,11 @@ use pars::Parse;
 use stream::{TokenStream, SavableStream};
 use std::iter::FromIterator;
 use std::marker::PhantomData;
-use result::ParseErr;
+use result::{ParseErr, MultiError};
 
 use std::rc::Rc;
 
-pub type ParseTrait<'a, I, O, E> = Parse<Input=I, Output=O, Error=E> + 'a;
+pub type ParseTrait<'a, I, O, E> = Box<Parse<Input=I, Output=O, Error=E> + 'a>;
 
 pub struct Then<P, F>(P, F);
 impl<F, P, R> Parse for Then<P, F>
@@ -38,15 +38,16 @@ impl<E, P> Parse for OnError<P, E>
     }
 }
 
-pub struct Or<P1, P2>(pub P1, pub P2);
-impl<R, T, P1, P2> Parse for Or<P1, P2>
-    where P1: Parse<Input=T, Output = R, Error=ParseErr<T::Token>>,
-          P2: Parse<Input=T, Output = R, Error=ParseErr<T::Token>>,
-          T: TokenStream
+pub struct Or<P1, P2>(P1, P2);
+
+impl<T, R, E, P1, P2> Parse for Or<P1, P2>
+    where P1: Parse<Input=T, Output = R, Error=E>,
+          P2: Parse<Input=T, Output = R, Error=E>,
+          E: MultiError, T: TokenStream
 {
     type Input = T;
     type Output = R;
-    type Error = ParseErr<T::Token>;
+    type Error = E;
 
     fn parse(&self, tokens: &mut T) -> Result<Self::Output, Self::Error> {
         match self.0.parse(tokens) {
@@ -138,7 +139,7 @@ where I: SavableStream,
     }
 }
 
-pub struct Maybe<P>(P);
+pub struct Maybe<P: Parse>(P);
 impl<P> Parse for Maybe<P>
     where P: Parse,
 {
@@ -177,9 +178,9 @@ impl_tup!(a,b);
 impl_tup!(a,b,c);
 impl_tup!(a,b,c,d);
 
-pub struct Seq<'a, I, R, O, E> {
-    parsers: Vec<Box<ParseTrait<'a, I, O, E>>>,
-    _phantom: PhantomData<R>
+pub struct Seq<'a, I, C, R, E> {
+    parsers: Vec<ParseTrait<'a, I, R, E>>,
+    _phantom: PhantomData<C>
 }
 
 impl<'a, I, R, O, E> Seq<'a, I, R, O, E> {
@@ -194,7 +195,7 @@ impl<'a, I, R, O, E> Seq<'a, I, R, O, E> {
     where C: IntoIterator<Item=P>,
           P: Parse<Input=I, Output=O, Error=E> + 'a,
     {
-        let parser_iter = parsers.into_iter().map(|p| Box::new(p) as Box<ParseTrait<'a, I, O, E>>);
+        let parser_iter = parsers.into_iter().map(|p| Box::new(p) as ParseTrait<'a, I, O, E>);
         Seq {
             parsers: Vec::from_iter(parser_iter),
             _phantom: PhantomData,
@@ -219,7 +220,10 @@ where I: SavableStream,
 
     fn parse(&self, tokens: &mut I) -> Result<C, E> {
         let save = tokens.save();
-        let res: Result<C, E> = self.parsers.iter().map(|p| p.parse(tokens)).collect();
+        let res: Result<C, E> = self.parsers
+                                    .iter()
+                                    .map(|p| p.parse(tokens))
+                                    .collect();
         if res.is_err() {
             tokens.restore(save);
         }
@@ -271,7 +275,9 @@ where Self: Sized, {
         Then(self, f)
     }
 
-    fn many<R>(self) -> Many<Self, R> {
+    fn many<R>(self) -> Many<Self, R>
+    where R: FromIterator<Self::Output>
+    {
         Many(self, PhantomData)
     }
 
@@ -299,15 +305,17 @@ impl<P> ParserComb for P
     where P: Parse + Sized,
 {}
 
-pub fn many<P, R>(p: P) -> Many<P, R> {
+pub fn many<P: Parse, R>(p: P) -> Many<P, R>
+where R: FromIterator<P::Output>
+{
     Many(p, PhantomData)
 }
 
-pub fn many0<P, R>(p: P) -> Many0<P, R> {
+pub fn many0<P: Parse, R>(p: P) -> Many0<P, R> {
     Many0(p, PhantomData)
 }
 
-pub fn maybe<P>(p: P) -> Maybe<P> {
+pub fn maybe<P: Parse>(p: P) -> Maybe<P> {
     Maybe(p)
 }
 

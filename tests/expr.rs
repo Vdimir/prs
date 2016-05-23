@@ -5,7 +5,7 @@ use prs::pars::{Token, Parse, predicate, fn_parser, eof};
 use prs::stream::char_stream::CharStream;
 use prs::stream::vec_stream::VecStream;
 use prs::comb::ParserComb;
-use prs::comb::{many, wrap, many0};
+use prs::comb::{many, wrap, many0, ParserWraper};
 use prs::result::ParseErr;
 
 use std::collections::HashMap;
@@ -66,10 +66,9 @@ impl ExprToken {
     }
 }
 
-fn tokenize(input: &str) -> Result<Vec<ExprToken>, ParseErr<char>> {
+fn lexer<'a>() -> ParserWraper<'a, CharStream<'a>, Vec<ExprToken>, ParseErr<char>> {
     use ExprToken::*;
-
-    let plus    = Token::<CharStream>('+').then(|_| Add);
+    let plus    = Token('+').then(|_| Add);
     let minus   = Token('-').then(|_| Sub);
     let mul     = Token('*').then(|_| Mul);
     let div     = Token('/').then(|_| Div);
@@ -80,7 +79,7 @@ fn tokenize(input: &str) -> Result<Vec<ExprToken>, ParseErr<char>> {
     let paren = l_paren.or(r_paren);
     let digit = wrap(predicate(|c: &char| c.is_digit(10)));
 
-    let num = many(digit.clone())
+    let num = many(digit)
                 .then(|s: String| s.parse::<i32>().unwrap())
                 .then(Num);
 
@@ -88,11 +87,15 @@ fn tokenize(input: &str) -> Result<Vec<ExprToken>, ParseErr<char>> {
                         .then(|c: char| c.to_string());
     let letdig = predicate(|c| char::is_alphanumeric(*c));
     let iden = letter.and(many0(letdig))
-                .then(|s| Iden(s));
+                .then(Iden);
     let lexem = wrap(op_symb.or(num).or(iden).or(paren));
 
-    let lexer = many(lexem.skip_any(Token(' '))).skip(eof());
-    return lexer.parse_from(input);
+    wrap(many(lexem.skip_any(Token(' ')))
+                                    .skip(eof()))
+}
+
+fn tokenize(input: &str) -> Result<Vec<ExprToken>, ParseErr<char>> {
+    lexer().parse_from(input)
 }
 
 #[test]
@@ -138,7 +141,7 @@ impl Node {
     }
 }
 
-fn create_op(op: ExprToken, lhs: Node, rhs: Node) -> Node {
+fn create_op(lhs: Node, (op, rhs): (ExprToken, Node)) -> Node {
     match op {
         ExprToken::Add => Node::Add(Box::new((lhs, rhs))),
         ExprToken::Sub => Node::Sub(Box::new((lhs, rhs))),
@@ -151,14 +154,21 @@ fn create_op(op: ExprToken, lhs: Node, rhs: Node) -> Node {
 fn parse_expr(s: &str) -> Result<Node, ParseErr<ExprToken>> {
 
     fn list_to_tree((node, rest): (Node, Vec<(ExprToken, Node)>)) -> Node {
-        rest.into_iter().fold(node, |lhs, (op, rhs)| create_op(op, lhs, rhs))
+        rest.into_iter().fold(node, create_op)
     }
 
+    macro_rules! delimeted (
+        ($a:ident, $b:ident) => (
+            ($a.clone(), many0(($b,$a)))
+        );
+        ($a:ident, $b:ident, $f:ident) => (
+            wrap(($a.clone(), many0(($b,$a))).then($f))
+        );
+    );
     fn expression(s: &mut VecStream<ExprToken>) -> Result<Node, ParseErr<ExprToken>>
     {
         let num = predicate(ExprToken::is_num)
-                    .then(|t: ExprToken| t.num())
-                    .then(Node::Num);
+                    .then(|t: ExprToken| Node::Num(t.num()));
 
         let iden = predicate(ExprToken::is_iden)
                     .then(|t: ExprToken| Node::Iden(t.iden()));
@@ -170,14 +180,13 @@ fn parse_expr(s: &str) -> Result<Node, ParseErr<ExprToken>> {
             .then(|(_, e, _)| e));
 
         let factor = wrap(num.or(iden).or(parens_exp));
-        let op_symb = predicate(ExprToken::is_mul_op);
+        let mul_symb = predicate(ExprToken::is_mul_op);
 
-        let inf_mul = wrap((factor.clone(), many0::<_,Vec<_>>((op_symb, factor)))
-                .then(list_to_tree));
+        let inf_mul = delimeted!(factor, mul_symb, list_to_tree);
 
         let add_symb = predicate(ExprToken::is_add_op);
-        let expr_parser = (inf_mul.clone(), many0((add_symb, inf_mul)))
-                                .then(list_to_tree);
+
+        let expr_parser = delimeted!(inf_mul, add_symb, list_to_tree);
         expr_parser.parse(s)
     }
 
